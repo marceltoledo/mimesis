@@ -1,0 +1,140 @@
+# Mimesis — Architecture Register
+
+> Living record of all bounded contexts, components, domain events, and global ADRs.
+> **Updated by the Solution Architect agent after every finalised design.**
+
+---
+
+## System Overview
+
+```
+YouTube (search & download) → Transcription → Style Learning → Story Generation → Voice Synthesis → Publish
+```
+
+---
+
+## Bounded Context Map
+
+| # | Bounded Context | Responsibility | Status |
+|---|---|---|---|
+| 1 | **Video Discovery** | Search YouTube by keyword, deduplicate, emit `VideoDiscovered` events | Designed |
+| 2 | **Video Ingestion** | Download video from YouTube URL, extract audio, store in Blob Storage | Prototype (notebook) |
+| 3 | **Transcription** | Transcribe audio to text using Whisper, store transcription | Prototype (notebook) |
+| 4 | **Style Learning** | Analyse transcriptions, learn narrator's writing style, store style profile | Not started |
+| 5 | **Story Generation** | Generate new stories from news using learned style | Not started |
+| 6 | **Voice Synthesis** | Clone narrator voice, narrate generated story, produce audio | Not started |
+| 7 | **Publishing** | Store and serve final audio story | Not started |
+
+---
+
+## Component Registry
+
+### BC-01 · Video Discovery
+
+**Solution Design**: Created April 2026
+
+**Aggregate Root**: `SearchJob`
+
+**Key Domain Objects**:
+
+| Object | Type | Description |
+|---|---|---|
+| `SearchJob` | Aggregate Root | Orchestrates a keyword search run |
+| `VideoSearchResult` | Entity | A video returned by YouTube for a given search |
+| `SearchQuery` | Value Object | Keyword + optional filters |
+| `SearchFilters` | Value Object | `language`, `published_after`, `video_duration`, `region_code` |
+| `VideoMetadata` | Value Object | Full YouTube API v3 metadata fields |
+| `VideoDiscovered` | Domain Event | Emitted once per unique `videoId` globally |
+
+**Domain Events**:
+
+| Event | Producer | Consumer | Queue |
+|---|---|---|---|
+| `VideoDiscovered` | Video Discovery | Video Ingestion | `sb-queue-video-discovered` |
+
+**Key Decisions**:
+- `google-api-python-client` for YouTube Data API v3 (search + full metadata in batch)
+- Auto-pagination up to configurable `max_results` ceiling
+- Global deduplication via **Azure Table Storage** Discovery Ledger (`PartitionKey='video'`, `RowKey=videoId`)
+- API key stored in **Azure Key Vault**; retrieved via Managed Identity
+- Events published to **Azure Service Bus** with `messageId = videoId` (duplicate detection enabled)
+
+**Terraform Resources**:
+- `azurerm_servicebus_namespace` + `azurerm_servicebus_queue` (name: `sb-queue-video-discovered`)
+- `azurerm_storage_table` (Discovery Ledger, in existing Storage Account)
+- `azurerm_key_vault_secret` (`youtube-api-key`)
+- `azurerm_role_assignment` (Key Vault Secrets User, Storage Table Data Contributor, Service Bus Data Sender)
+
+---
+
+### BC-02 · Video Ingestion *(Prototype — not yet formally designed)*
+
+**Status**: Exists as notebook code (`main_notebook.ipynb`). Needs a formal Solution Design before promotion to production component.
+
+**Known capabilities** (from prototype):
+- Download YouTube video by URL using `pytubefix`
+- Extract audio to MP3 using `ffmpeg`
+- Store audio in local folder (to be migrated to Azure Blob Storage)
+
+**Pending Design Decisions**:
+- Trigger mechanism (consuming `VideoDiscovered` from Service Bus vs direct URL input)
+- Azure Blob Storage path convention for audio files
+- Error handling and retry strategy
+
+---
+
+## Global Architecture Decision Records
+
+These ADRs apply to **all** bounded contexts and must not be re-litigated per component.
+
+### G-ADR-01: Terraform as the only IaC tool
+
+- **Decision**: `azurerm` provider Terraform for all Azure resource provisioning.
+- **Rejected**: Bicep (valid but team preference is Terraform), ad-hoc `az` CLI.
+- **Consequences**: Terraform CLI required in CI/CD; remote state in Azure Blob Storage with locking.
+
+### G-ADR-02: Azure Managed Identity + DefaultAzureCredential for all auth
+
+- **Decision**: No secrets in environment variables or config files. All Azure SDK clients use `DefaultAzureCredential`.
+- **Rejected**: Service principal client secrets in `.env` files — rotation risk, leak risk.
+- **Consequences**: Requires Managed Identity assignment on all compute resources.
+
+### G-ADR-03: Azure Service Bus for all inter-component messaging
+
+- **Decision**: Service Bus Standard tier; consumers settle messages (complete/abandon).
+- **Rejected**: Storage Queue (lacks duplicate detection, session support); Event Grid (push-only, not pull-queue).
+- **Consequences**: Service Bus namespace shared across bounded contexts; each BC gets its own queue.
+
+### G-ADR-04: Azure Table Storage for lightweight key-value registries
+
+- **Decision**: Use Table Storage for deduplication ledgers and lookup tables. Same Storage Account as Blob.
+- **Rejected**: Cosmos DB (overkill for key lookups at MVP scale), Redis (ephemeral, adds infra complexity).
+- **Consequences**: No complex query support — Table Storage is point-read/write only by design.
+
+### G-ADR-05: Azure Application Insights for all monitoring
+
+- **Decision**: Every component logs structured events and exceptions to Application Insights.
+- **Consequences**: Single App Insights instance shared across all bounded contexts; use `cloud_RoleName` to distinguish components.
+
+---
+
+## Domain Event Catalogue
+
+| Event | Producer BC | Consumer BC | Service Bus Queue | Schema Version |
+|---|---|---|---|---|
+| `VideoDiscovered` | Video Discovery | Video Ingestion | `sb-queue-video-discovered` | v1 |
+
+---
+
+## Ubiquitous Language (Global)
+
+Terms that are shared across all bounded contexts and must be used consistently.
+
+| Term | Definition |
+|---|---|
+| **Video** | A YouTube video identified by its YouTube `videoId` |
+| **Narrator** | The human storyteller whose style and voice Mimesis learns and reproduces |
+| **Story** | A narrated audio piece generated by Mimesis in the narrator's style and voice |
+| **Pipeline** | The end-to-end sequence: Discover → Ingest → Transcribe → Learn → Generate → Synthesise → Publish |
+| **Bounded Context** | A self-contained domain area with its own model, team ownership, and deployment boundary |
+| **Domain Event** | An immutable record of something that happened, used to communicate between bounded contexts |
