@@ -127,6 +127,15 @@ After the design is finalised, update **`.github/docs/mimesis-architecture.md`**
 
 Do NOT duplicate existing Global ADRs (G-ADR-01 through G-ADR-05) in the component entry — reference them by ID only.
 
+### Step 9 — Operational Handoff (When Requested)
+If the user asks for implementation tracking, produce a GitHub issue body from the final Solution Design and create it with GitHub CLI.
+
+Required behavior:
+- Use `gh issue create --title "..." --body-file <markdown-file>` for long issue content.
+- If label assignment fails because labels do not exist, retry issue creation without labels and report which labels were missing.
+- Ensure issue content includes: acceptance criteria (GIVEN/WHEN/THEN), technical design summary, ADRs, and implementation checklist.
+- Reflect final user confirmations in the issue (queue names, formats, retention, policy alignments).
+
 ## Output Format
 
 Produce the following sections in order:
