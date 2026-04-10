@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mimesis"
+version = "0.1.0"
+description = "AI pipeline: learn storyteller voice from YouTube, generate new stories in the same style"
+requires-python = ">=3.12"
+dependencies = [
+    "google-api-python-client>=2.100.0",
+    "azure-identity>=1.15.0",
+    "azure-keyvault-secrets>=4.7.0",
+    "azure-data-tables>=12.4.0",
+    "azure-servicebus>=7.11.0",
+    "azure-monitor-opentelemetry>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "pytest-mock>=3.12",
+    "black>=24.0",
+    "ruff>=0.4",
+    "mypy>=1.8",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "--strict-markers -m 'not integration' -q"
+markers = [
+    "unit: fast, fully isolated unit tests",
+    "integration: require live Azure resources — skipped in CI by default",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true

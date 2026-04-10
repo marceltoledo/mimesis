@@ -1,3 +1,26 @@
+# ── Mimesis project-specific ignores ─────────────────────────────────────────
+
+# Local environment variables (never commit — see .env.example for the template)
+.env
+.env.local
+
+# Python virtual environments
+.venv/
+venv/
+
+# Terraform — secrets files (API keys, passwords — never commit)
+infrastructure/terraform/*.secrets.tfvars
+infrastructure/terraform/secrets.auto.tfvars
+
+# Terraform — generated / local state (state is remote; backend.hcl is local config)
+infrastructure/terraform/.terraform/
+infrastructure/terraform/.terraform.lock.hcl
+infrastructure/terraform/terraform.tfstate
+infrastructure/terraform/terraform.tfstate.backup
+infrastructure/terraform/crash.log
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

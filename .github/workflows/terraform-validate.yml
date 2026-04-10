@@ -1,0 +1,38 @@
+name: Terraform Validate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infrastructure/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "infrastructure/**"
+
+jobs:
+  validate:
+    name: Terraform fmt + validate
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: infrastructure/terraform
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.7"
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive
+
+      # Init without a real backend so validate works in CI without Azure creds
+      - name: Init (no backend)
+        run: terraform init -backend=false
+
+      - name: Validate
+        run: terraform validate
