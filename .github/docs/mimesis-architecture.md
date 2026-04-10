@@ -3,6 +3,8 @@
 > Living record of all bounded contexts, components, domain events, and global ADRs.
 > **Updated by the Solution Architect agent after every finalised design.**
 
+For operational agent conventions and learned workflows, see `.github/docs/agent-knowledge-base.md`.
+
 ---
 
 ## System Overview
