@@ -115,9 +115,7 @@ def _build_query(payload: dict[str, Any]) -> SearchQuery:
         published_after_raw = filters_payload.get("published_after")
         published_after = None
         if isinstance(published_after_raw, str) and published_after_raw:
-            published_after = datetime.fromisoformat(
-                published_after_raw.replace("Z", "+00:00")
-            )
+            published_after = datetime.fromisoformat(published_after_raw.replace("Z", "+00:00"))
 
         filters = SearchFilters(
             language=_as_optional_str(filters_payload.get("language")),
