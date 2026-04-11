@@ -64,6 +64,49 @@ resource "azurerm_storage_table" "discovery_ledger" {
   storage_account_name = azurerm_storage_account.main.name
 }
 
+resource "azurerm_storage_table" "ingestion_ledger" {
+  name                 = "ingestionLedger"
+  storage_account_name = azurerm_storage_account.main.name
+}
+
+resource "azurerm_storage_container" "raw_videos" {
+  name                  = "raw-videos"
+  storage_account_name  = azurerm_storage_account.main.name
+  container_access_type = "private"
+}
+
+resource "azurerm_storage_container" "extracted_audio" {
+  name                  = "extracted-audio"
+  storage_account_name  = azurerm_storage_account.main.name
+  container_access_type = "private"
+}
+
+resource "azurerm_storage_container" "video_metadata" {
+  name                  = "video-metadata"
+  storage_account_name  = azurerm_storage_account.main.name
+  container_access_type = "private"
+}
+
+resource "azurerm_storage_management_policy" "main" {
+  storage_account_id = azurerm_storage_account.main.id
+
+  rule {
+    name    = "delete-raw-videos-after-30-days"
+    enabled = true
+
+    filters {
+      blob_types   = ["blockBlob"]
+      prefix_match = ["raw-videos/"]
+    }
+
+    actions {
+      base_blob {
+        delete_after_days_since_modification_greater_than = 30
+      }
+    }
+  }
+}
+
 # ── Service Bus ───────────────────────────────────────────────────────────────
 # Standard SKU: supports AMQP, duplicate detection, and at-least-once delivery
 # (ADR-02).
@@ -86,6 +129,15 @@ resource "azurerm_servicebus_queue" "video_discovered" {
   duplicate_detection_history_time_window = "PT10M"
 
   max_delivery_count = 10
+}
+
+resource "azurerm_servicebus_queue" "video_ingested" {
+  name         = "sb-queue-video-ingested"
+  namespace_id = azurerm_servicebus_namespace.main.id
+
+  requires_duplicate_detection            = true
+  duplicate_detection_history_time_window = "PT10M"
+  max_delivery_count                      = 10
 }
 
 # ── Log Analytics Workspace (required by workspace-based App Insights) ────────

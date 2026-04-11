@@ -33,6 +33,31 @@ output "service_bus_queue" {
   value       = azurerm_servicebus_queue.video_discovered.name
 }
 
+output "service_bus_ingested_queue" {
+  description = "Service Bus queue name for VideoIngested events — set as MIMESIS_SERVICE_BUS_INGESTED_QUEUE."
+  value       = azurerm_servicebus_queue.video_ingested.name
+}
+
+output "ingestion_ledger_table" {
+  description = "Azure Table name for BC-02 idempotency ledger — set as MIMESIS_INGESTION_LEDGER_TABLE."
+  value       = azurerm_storage_table.ingestion_ledger.name
+}
+
+output "raw_videos_container" {
+  description = "Blob container for source video retention."
+  value       = azurerm_storage_container.raw_videos.name
+}
+
+output "extracted_audio_container" {
+  description = "Blob container for extracted MP3 artifacts."
+  value       = azurerm_storage_container.extracted_audio.name
+}
+
+output "video_metadata_container" {
+  description = "Blob container for ingestion metadata JSON artifacts."
+  value       = azurerm_storage_container.video_metadata.name
+}
+
 output "app_insights_connection_string" {
   description = "Application Insights connection string — set as MIMESIS_APP_INSIGHTS_CONNECTION_STRING."
   value       = azurerm_application_insights.main.connection_string

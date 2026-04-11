@@ -18,7 +18,7 @@ YouTube (search & download) → Transcription → Style Learning → Story Gener
 | # | Bounded Context | Responsibility | Status |
 |---|---|---|---|
 | 1 | **Video Discovery** | Search YouTube by keyword, deduplicate, emit `VideoDiscovered` events | Designed |
-| 2 | **Video Ingestion** | Download video from YouTube URL, extract audio, store in Blob Storage | Prototype (notebook) |
+| 2 | **Video Ingestion** | Consume discovered video events, persist video/audio/metadata artifacts, emit `VideoIngested` events | Designed |
 | 3 | **Transcription** | Transcribe audio to text using Whisper, store transcription | Prototype (notebook) |
 | 4 | **Style Learning** | Analyse transcriptions, learn narrator's writing style, store style profile | Not started |
 | 5 | **Story Generation** | Generate new stories from news using learned style | Not started |
@@ -67,19 +67,45 @@ YouTube (search & download) → Transcription → Style Learning → Story Gener
 
 ---
 
-### BC-02 · Video Ingestion *(Prototype — not yet formally designed)*
+### BC-02 · Video Ingestion
 
-**Status**: Exists as notebook code (`main_notebook.ipynb`). Needs a formal Solution Design before promotion to production component.
+**Solution Design**: Created April 2026
 
-**Known capabilities** (from prototype):
-- Download YouTube video by URL using `pytubefix`
-- Extract audio to MP3 using `ffmpeg`
-- Store audio in local folder (to be migrated to Azure Blob Storage)
+**Aggregate Root**: `VideoIngestionAggregate`
 
-**Pending Design Decisions**:
-- Trigger mechanism (consuming `VideoDiscovered` from Service Bus vs direct URL input)
-- Azure Blob Storage path convention for audio files
-- Error handling and retry strategy
+**Key Domain Objects**:
+
+| Object | Type | Description |
+|---|---|---|
+| `VideoIngestionAggregate` | Aggregate Root | Coordinates ingestion lifecycle for one `videoId` |
+| `IngestionRecord` | Entity | Tracks status, retries, and completion timestamps |
+| `IngestionArtifactSet` | Entity | Blob artifact references for source video, audio, and metadata |
+| `BlobArtifactPath` | Value Object | Canonical artifact storage path |
+| `IngestionStatus` | Value Object | `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED` |
+| `VideoIngested` | Domain Event | Emitted after all required artifacts are durably persisted |
+
+**Domain Events**:
+
+| Event | Producer | Consumer | Queue |
+|---|---|---|---|
+| `VideoDiscovered` | Video Discovery | Video Ingestion | `sb-queue-video-discovered` |
+| `VideoIngested` | Video Ingestion | Transcription | `sb-queue-video-ingested` |
+
+**Key Decisions**:
+- Trigger model: consume `VideoDiscovered` from Service Bus (`sb-queue-video-discovered`)
+- Download source media with `pytubefix` (complements BC-01 `google-api-python-client` usage)
+- Extract audio to MP3 via `ffmpeg`/`pydub`
+- Persist artifacts in Blob Storage (`raw-videos`, `extracted-audio`, `video-metadata`)
+- Metadata blob stores ingestion-owned metadata only (no full event envelope)
+- Deduplication/idempotency via Azure Table Storage ingestion ledger (`PartitionKey='video'`, `RowKey=videoId`)
+- Emit `VideoIngested` only after artifact completeness (video, audio, metadata)
+- Apply raw-video retention of 30 days via Blob lifecycle rules
+
+**Terraform Resources**:
+- `azurerm_servicebus_queue` (name: `sb-queue-video-ingested`)
+- `azurerm_storage_management_policy` (30-day retention for raw video blobs)
+- `azurerm_storage_table` (Ingestion Ledger)
+- `azurerm_role_assignment` (Service Bus Data Receiver/Sender, Blob Data Contributor, Table Data Contributor)
 
 ---
 
@@ -123,6 +149,7 @@ These ADRs apply to **all** bounded contexts and must not be re-litigated per co
 | Event | Producer BC | Consumer BC | Service Bus Queue | Schema Version |
 |---|---|---|---|---|
 | `VideoDiscovered` | Video Discovery | Video Ingestion | `sb-queue-video-discovered` | v1 |
+| `VideoIngested` | Video Ingestion | Transcription | `sb-queue-video-ingested` | v1 |
 
 ---
 
