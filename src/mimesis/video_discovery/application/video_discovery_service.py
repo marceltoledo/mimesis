@@ -74,9 +74,7 @@ class VideoDiscoveryService:
             job.mark_failed()
             return job
         except Exception:
-            logger.exception(
-                "Unexpected error in run_search | job_id=%s", job.search_job_id
-            )
+            logger.exception("Unexpected error in run_search | job_id=%s", job.search_job_id)
             job.mark_failed()
             raise
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+
 import pytest
 
 from mimesis.video_discovery.domain.models import (
@@ -124,5 +126,5 @@ class TestSearchFilters:
 
     def test_frozen_immutable(self) -> None:
         f = SearchFilters(language="en")
-        with pytest.raises(Exception):  # FrozenInstanceError or AttributeError
+        with pytest.raises(FrozenInstanceError):
             f.language = "pt"  # type: ignore[misc]
