@@ -34,6 +34,6 @@ variable "youtube_api_key" {
       az keyvault secret set --vault-name <name> --name youtube-api-key --value <key>
     then remove the azurerm_key_vault_secret resource from the state.
   EOT
-  type      = string
-  sensitive = true
+  type        = string
+  sensitive   = true
 }

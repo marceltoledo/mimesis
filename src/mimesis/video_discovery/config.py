@@ -33,7 +33,7 @@ class VideoDiscoveryConfig:
     app_insights_connection_string: str
     """Application Insights connection string for telemetry."""
 
-    default_max_results: int = 500
+    default_max_results: int = 15
     """Default ceiling for paginated searches when callers omit max_results."""
 
     @classmethod
@@ -52,7 +52,7 @@ class VideoDiscoveryConfig:
             app_insights_connection_string=_require(
                 "MIMESIS_APP_INSIGHTS_CONNECTION_STRING"
             ),
-            default_max_results=int(os.getenv("MIMESIS_DEFAULT_MAX_RESULTS", "500")),
+            default_max_results=int(os.getenv("MIMESIS_DEFAULT_MAX_RESULTS", "15")),
         )
 
 

@@ -1,6 +1,6 @@
 # Deployment Plan: BC-01 Video Discovery + BC-02 Video Ingestion DEV Rollout
 
-Status: Awaiting Approval
+Status: Ready for Validation
 
 ## Context
 

@@ -1,0 +1,104 @@
+name: Create Issue Branch
+
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue number to create a branch for (leave blank to create branches for all open issues)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  create-branch:
+    name: Create branch for issue
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create branch(es)
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            async function slugify(title) {
+              return title
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .slice(0, 50);
+            }
+
+            async function createBranchForIssue(issue) {
+              const slug = await slugify(issue.title);
+              const branchName = `issue/${issue.number}-${slug}`;
+
+              // Resolve the SHA of the default branch
+              const repo = await github.rest.repos.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+              const defaultBranch = repo.data.default_branch;
+              const base = await github.rest.repos.getBranch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                branch: defaultBranch,
+              });
+              const sha = base.data.commit.sha;
+
+              // Check whether the branch already exists
+              try {
+                await github.rest.repos.getBranch({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  branch: branchName,
+                });
+                core.info(`Branch already exists: ${branchName} — skipping.`);
+                return;
+              } catch (err) {
+                if (err.status !== 404) throw err;
+              }
+
+              // Create the branch
+              await github.rest.git.createRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `refs/heads/${branchName}`,
+                sha,
+              });
+              core.info(`Created branch: ${branchName}`);
+            }
+
+            if (context.eventName === 'issues') {
+              // Triggered by a new issue being opened
+              await createBranchForIssue(context.payload.issue);
+            } else {
+              // Manual dispatch
+              const inputNumber = '${{ inputs.issue_number }}';
+              if (inputNumber) {
+                const { data: issue } = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: parseInt(inputNumber, 10),
+                });
+                await createBranchForIssue(issue);
+              } else {
+                // Create branches for all open issues
+                const issues = await github.paginate(github.rest.issues.listForRepo, {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  state: 'open',
+                  per_page: 100,
+                });
+                for (const issue of issues) {
+                  // Skip pull requests (GitHub returns them in issues list)
+                  if (issue.pull_request) continue;
+                  await createBranchForIssue(issue);
+                }
+              }
+            }

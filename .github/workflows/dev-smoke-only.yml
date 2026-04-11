@@ -1,0 +1,16 @@
+name: DEV Smoke Only
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: BC-01 default max_results smoke
+        run: |
+          response=$(curl -sS -X POST "${{ secrets.AZURE_BC01_FUNCTION_URL }}?code=${{ secrets.AZURE_BC01_FUNCTION_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"keyword":"storytelling"}')
+          echo "$response"
+          echo "$response" | grep '"max_results": 15\|"max_results":15'
