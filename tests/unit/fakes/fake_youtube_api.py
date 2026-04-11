@@ -8,8 +8,7 @@ enabling AC-05 (quota exhaustion) tests.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from mimesis.video_discovery.domain.exceptions import QuotaExceededException
 from mimesis.video_discovery.domain.models import SearchQuery, VideoMetadata
@@ -23,7 +22,7 @@ def _make_metadata(video_id: str) -> VideoMetadata:
         description=f"Description for {video_id}",
         channel_id="ch_test",
         channel_title="Fake Channel",
-        published_at=datetime(2024, 3, 1, tzinfo=timezone.utc),
+        published_at=datetime(2024, 3, 1, tzinfo=UTC),
         duration="PT8M",
         view_count=1_000,
         like_count=50,
@@ -46,7 +45,7 @@ class FakeYouTubeApi(YouTubeApiPort):
     def __init__(
         self,
         pages: list[list[str]],
-        fail_on_page: Optional[int] = None,
+        fail_on_page: int | None = None,
     ) -> None:
         self._pages = pages
         self._fail_on_page = fail_on_page
@@ -56,7 +55,7 @@ class FakeYouTubeApi(YouTubeApiPort):
         self,
         query: SearchQuery,
         page_size: int,
-        page_token: Optional[str] = None,
+        page_token: str | None = None,
     ) -> SearchPage:
         page_index = int(page_token) if page_token else 0
         self.calls.append(
@@ -74,7 +73,7 @@ class FakeYouTubeApi(YouTubeApiPort):
         video_ids = all_video_ids[:page_size]
         results = [(vid, _make_metadata(vid)) for vid in video_ids]
 
-        next_token: Optional[str] = (
+        next_token: str | None = (
             str(page_index + 1) if (page_index + 1) < len(self._pages) else None
         )
         return SearchPage(video_metadatas=results, next_page_token=next_token)

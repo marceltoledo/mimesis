@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Optional
 
 from googleapiclient.discovery import build  # type: ignore[import-untyped]
 from googleapiclient.errors import HttpError  # type: ignore[import-untyped]
@@ -28,7 +27,7 @@ _YT_API_SERVICE = "youtube"
 _YT_API_VERSION = "v3"
 
 
-def _safe_int(value: object) -> Optional[int]:
+def _safe_int(value: object) -> int | None:
     """Convert a YouTube statistics string value to int; return None if absent."""
     return int(str(value)) if value is not None else None
 
@@ -45,7 +44,7 @@ def _parse_metadata(item: dict[str, object]) -> tuple[str, VideoMetadata]:
 
     thumbnails = snippet.get("thumbnails", {})
     tags_raw = snippet.get("tags")
-    tags: Optional[list[str]] = list(tags_raw) if tags_raw else None  # type: ignore[arg-type]
+    tags: list[str] | None = list(tags_raw) if tags_raw else None  # type: ignore[arg-type]
 
     metadata = VideoMetadata(
         title=str(snippet.get("title", "")),
@@ -79,7 +78,7 @@ class YouTubeApiClient(YouTubeApiPort):
         self,
         query: SearchQuery,
         page_size: int,
-        page_token: Optional[str] = None,
+        page_token: str | None = None,
     ) -> SearchPage:
         filters = query.filters
 
@@ -114,7 +113,7 @@ class YouTubeApiClient(YouTubeApiPort):
             raise YouTubeApiError(str(exc)) from exc
 
         items: list[dict[str, object]] = search_response.get("items", [])  # type: ignore[assignment]
-        next_page_token: Optional[str] = search_response.get("nextPageToken")  # type: ignore[assignment]
+        next_page_token: str | None = search_response.get("nextPageToken")  # type: ignore[assignment]
 
         if not items:
             return SearchPage(video_metadatas=[], next_page_token=None)

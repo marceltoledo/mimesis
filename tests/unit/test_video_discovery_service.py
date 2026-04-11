@@ -6,10 +6,7 @@ are fast, fully isolated, and require no network access.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Optional
-
-import pytest
+from datetime import UTC, datetime
 
 from mimesis.video_discovery.application.video_discovery_service import (
     VideoDiscoveryService,
@@ -23,14 +20,13 @@ from tests.unit.fakes.fake_discovery_ledger import FakeDiscoveryLedger
 from tests.unit.fakes.fake_event_publisher import FakeEventPublisher
 from tests.unit.fakes.fake_youtube_api import FakeYouTubeApi
 
-
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 
 def _make_service(
     pages: list[list[str]],
-    preexisting: Optional[set[str]] = None,
-    fail_on_page: Optional[int] = None,
+    preexisting: set[str] | None = None,
+    fail_on_page: int | None = None,
 ) -> tuple[VideoDiscoveryService, FakeYouTubeApi, FakeDiscoveryLedger, FakeEventPublisher]:
     youtube = FakeYouTubeApi(pages=pages, fail_on_page=fail_on_page)
     ledger = FakeDiscoveryLedger(preexisting=preexisting or set())
@@ -316,7 +312,7 @@ class TestAC08SearchFilters:
     def test_filters_are_forwarded_to_youtube_api(self) -> None:
         filters = SearchFilters(
             language="pt",
-            published_after=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            published_after=datetime(2024, 1, 1, tzinfo=UTC),
             video_duration="long",
             region_code="BR",
         )
@@ -331,7 +327,7 @@ class TestAC08SearchFilters:
         assert forwarded_query.filters.video_duration == "long"
         assert forwarded_query.filters.region_code == "BR"
         assert forwarded_query.filters.published_after == datetime(
-            2024, 1, 1, tzinfo=timezone.utc
+            2024, 1, 1, tzinfo=UTC
         )
 
     def test_no_filters_still_produces_results(self, sample_query: SearchQuery) -> None:

@@ -6,14 +6,14 @@ Value Objects  : SearchQuery, SearchFilters, VideoMetadata
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import Enum
-from typing import ClassVar, Optional
+from enum import StrEnum
+from typing import ClassVar
 from uuid import UUID, uuid4
 
 
-class SearchJobStatus(str, Enum):
+class SearchJobStatus(StrEnum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
@@ -24,16 +24,16 @@ class SearchJobStatus(str, Enum):
 class SearchFilters:
     """Optional YouTube search filter parameters."""
 
-    language: Optional[str] = None
+    language: str | None = None
     """Instructs the API to prefer results in this language (relevanceLanguage)."""
 
-    published_after: Optional[datetime] = None
+    published_after: datetime | None = None
     """Return only videos published after this UTC timestamp (RFC 3339)."""
 
-    video_duration: Optional[str] = None
+    video_duration: str | None = None
     """Filter by duration category: 'short' (<4 min), 'medium' (4-20 min), 'long' (>20 min)."""
 
-    region_code: Optional[str] = None
+    region_code: str | None = None
     """ISO 3166-1 alpha-2 region code (e.g. 'GB', 'BR')."""
 
     _VALID_DURATIONS: ClassVar[frozenset[str]] = frozenset({"short", "medium", "long"})
@@ -54,7 +54,7 @@ class SearchQuery:
     """A keyword plus optional filter parameters submitted to YouTube."""
 
     keyword: str
-    filters: Optional[SearchFilters] = None
+    filters: SearchFilters | None = None
 
     def __post_init__(self) -> None:
         if not self.keyword or not self.keyword.strip():
@@ -75,11 +75,11 @@ class VideoMetadata:
     view_count: int
     thumbnails: dict[str, object]
     category_id: str
-    like_count: Optional[int] = None
+    like_count: int | None = None
     """None when the channel has disabled the like counter."""
-    tags: Optional[list[str]] = None
+    tags: list[str] | None = None
     """None when the uploader did not set any tags."""
-    default_language: Optional[str] = None
+    default_language: str | None = None
     """BCP-47 language tag, e.g. 'en'. None when not declared by uploader."""
 
 
