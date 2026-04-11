@@ -95,8 +95,8 @@ class YouTubeApiClient(YouTubeApiPort):
             if filters.language:
                 search_kwargs["relevanceLanguage"] = filters.language
             if filters.published_after:
-                search_kwargs["publishedAfter"] = (
-                    filters.published_after.strftime("%Y-%m-%dT%H:%M:%SZ")
+                search_kwargs["publishedAfter"] = filters.published_after.strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
                 )
             if filters.video_duration:
                 search_kwargs["videoDuration"] = filters.video_duration
@@ -119,9 +119,7 @@ class YouTubeApiClient(YouTubeApiPort):
             return SearchPage(video_metadatas=[], next_page_token=None)
 
         # ── 2. videos.list (batch) ───────────────────────────────────────────
-        video_ids = ",".join(
-            str(item["id"]["videoId"]) for item in items  # type: ignore[index]
-        )
+        video_ids = ",".join(str(item["id"]["videoId"]) for item in items)  # type: ignore[index]
 
         try:
             videos_response: dict[str, object] = (

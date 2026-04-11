@@ -39,10 +39,7 @@ class SearchFilters:
     _VALID_DURATIONS: ClassVar[frozenset[str]] = frozenset({"short", "medium", "long"})
 
     def __post_init__(self) -> None:
-        if (
-            self.video_duration is not None
-            and self.video_duration not in self._VALID_DURATIONS
-        ):
+        if self.video_duration is not None and self.video_duration not in self._VALID_DURATIONS:
             raise ValueError(
                 f"video_duration must be one of {sorted(self._VALID_DURATIONS)!r}, "
                 f"got: {self.video_duration!r}"
@@ -111,8 +108,7 @@ class SearchJob:
     def mark_running(self) -> None:
         if self.status != SearchJobStatus.PENDING:
             raise ValueError(
-                f"Cannot transition to RUNNING from {self.status}. "
-                "Job must be in PENDING state."
+                f"Cannot transition to RUNNING from {self.status}. " "Job must be in PENDING state."
             )
         self.status = SearchJobStatus.RUNNING
 

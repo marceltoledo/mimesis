@@ -11,5 +11,7 @@ class IngestionLedgerPort(ABC):
         """Get ledger state for video_id or None if absent."""
 
     @abstractmethod
-    def upsert(self, video_id: str, status: IngestionStatus, failure_reason: str | None = None) -> None:
+    def upsert(
+        self, video_id: str, status: IngestionStatus, failure_reason: str | None = None
+    ) -> None:
         """Create/update ingestion record."""

@@ -67,9 +67,12 @@ class TestServiceBusLive:
 
         # Consume and settle — AC-09
         credential = DefaultAzureCredential()
-        with ServiceBusClient(
-            fully_qualified_namespace=_namespace(), credential=credential
-        ) as sb_client, sb_client.get_queue_receiver(_queue(), max_wait_time=10) as receiver:
+        with (
+            ServiceBusClient(
+                fully_qualified_namespace=_namespace(), credential=credential
+            ) as sb_client,
+            sb_client.get_queue_receiver(_queue(), max_wait_time=10) as receiver,
+        ):
             found = False
             for msg in receiver:
                 payload: dict[str, object] = json.loads(str(msg))
@@ -99,9 +102,12 @@ class TestServiceBusLive:
             publisher.publish(event)
 
         credential = DefaultAzureCredential()
-        with ServiceBusClient(
-            fully_qualified_namespace=_namespace(), credential=credential
-        ) as sb_client, sb_client.get_queue_receiver(_queue(), max_wait_time=10) as receiver:
+        with (
+            ServiceBusClient(
+                fully_qualified_namespace=_namespace(), credential=credential
+            ) as sb_client,
+            sb_client.get_queue_receiver(_queue(), max_wait_time=10) as receiver,
+        ):
             for msg in receiver:
                 payload = json.loads(str(msg))
                 if payload.get("video_id") == video_id:

@@ -17,10 +17,14 @@ class VideoIngestionConfig:
     @classmethod
     def from_env(cls) -> VideoIngestionConfig:
         return cls(
-            storage_account_url=_require("MIMESIS_STORAGE_ACCOUNT_URL").replace(".table.", ".blob."),
+            storage_account_url=_require("MIMESIS_STORAGE_ACCOUNT_URL").replace(
+                ".table.", ".blob."
+            ),
             ingestion_ledger_table=os.getenv("MIMESIS_INGESTION_LEDGER_TABLE", "ingestionLedger"),
             service_bus_namespace=_require("MIMESIS_SERVICE_BUS_NAMESPACE"),
-            video_ingested_queue=os.getenv("MIMESIS_SERVICE_BUS_INGESTED_QUEUE", "sb-queue-video-ingested"),
+            video_ingested_queue=os.getenv(
+                "MIMESIS_SERVICE_BUS_INGESTED_QUEUE", "sb-queue-video-ingested"
+            ),
             app_insights_connection_string=_require("MIMESIS_APP_INSIGHTS_CONNECTION_STRING"),
         )
 

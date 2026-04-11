@@ -31,9 +31,7 @@ def _make_service(
     youtube = FakeYouTubeApi(pages=pages, fail_on_page=fail_on_page)
     ledger = FakeDiscoveryLedger(preexisting=preexisting or set())
     publisher = FakeEventPublisher()
-    service = VideoDiscoveryService(
-        youtube_api=youtube, ledger=ledger, publisher=publisher
-    )
+    service = VideoDiscoveryService(youtube_api=youtube, ledger=ledger, publisher=publisher)
     return service, youtube, ledger, publisher
 
 
@@ -82,9 +80,7 @@ class TestAC02EmptySearch:
         assert job.new_discoveries == 0
         assert len(publisher.published) == 0
 
-    def test_empty_page_does_not_write_to_ledger(
-        self, sample_query: SearchQuery
-    ) -> None:
+    def test_empty_page_does_not_write_to_ledger(self, sample_query: SearchQuery) -> None:
         service, _, ledger, _ = _make_service(pages=[[]])
         service.run_search(query=sample_query, max_results=50)
 
@@ -95,9 +91,7 @@ class TestAC02EmptySearch:
 
 
 class TestAC03OneEventPerVideo:
-    def test_n_new_videos_produce_exactly_n_events(
-        self, sample_query: SearchQuery
-    ) -> None:
+    def test_n_new_videos_produce_exactly_n_events(self, sample_query: SearchQuery) -> None:
         video_ids = ["vid1", "vid2", "vid3"]
         service, _, _, publisher = _make_service(pages=[video_ids])
         job = service.run_search(query=sample_query, max_results=50)
@@ -120,9 +114,7 @@ class TestAC03OneEventPerVideo:
 
 
 class TestAC04SelfContainedPayload:
-    def test_to_dict_contains_required_top_level_keys(
-        self, sample_query: SearchQuery
-    ) -> None:
+    def test_to_dict_contains_required_top_level_keys(self, sample_query: SearchQuery) -> None:
         service, _, _, publisher = _make_service(pages=[["vid1"]])
         service.run_search(query=sample_query, max_results=50)
 
@@ -132,9 +124,7 @@ class TestAC04SelfContainedPayload:
         assert "occurred_at" in payload
         assert "metadata" in payload
 
-    def test_to_dict_metadata_contains_required_fields(
-        self, sample_query: SearchQuery
-    ) -> None:
+    def test_to_dict_metadata_contains_required_fields(self, sample_query: SearchQuery) -> None:
         service, _, _, publisher = _make_service(pages=[["vid1"]])
         service.run_search(query=sample_query, max_results=50)
 
@@ -152,9 +142,7 @@ class TestAC04SelfContainedPayload:
         }
         assert required_keys.issubset(metadata.keys())  # type: ignore[union-attr]
 
-    def test_search_job_id_is_serialised_as_string(
-        self, sample_query: SearchQuery
-    ) -> None:
+    def test_search_job_id_is_serialised_as_string(self, sample_query: SearchQuery) -> None:
         service, _, _, publisher = _make_service(pages=[["vid1"]])
         service.run_search(query=sample_query, max_results=50)
 
@@ -166,9 +154,7 @@ class TestAC04SelfContainedPayload:
 
 
 class TestAC05QuotaExhaustion:
-    def test_quota_on_first_page_marks_job_failed(
-        self, sample_query: SearchQuery
-    ) -> None:
+    def test_quota_on_first_page_marks_job_failed(self, sample_query: SearchQuery) -> None:
         service, _, _, publisher = _make_service(pages=[[]], fail_on_page=0)
         job = service.run_search(query=sample_query, max_results=50)
 
@@ -190,9 +176,7 @@ class TestAC05QuotaExhaustion:
         # Events from page 0 are already on the queue and must NOT be retracted
         assert len(publisher.published) == 10
 
-    def test_quota_does_not_raise_to_caller(
-        self, sample_query: SearchQuery
-    ) -> None:
+    def test_quota_does_not_raise_to_caller(self, sample_query: SearchQuery) -> None:
         """run_search must not propagate QuotaExceededException — it swallows it."""
         service, _, _, _ = _make_service(pages=[[]], fail_on_page=0)
         job = service.run_search(query=sample_query, max_results=50)  # must not raise
@@ -206,9 +190,7 @@ class TestAC06GlobalDeduplication:
     def test_known_video_is_skipped_and_counter_incremented(
         self, sample_query: SearchQuery
     ) -> None:
-        service, _, _, publisher = _make_service(
-            pages=[["vid1", "vid2"]], preexisting={"vid1"}
-        )
+        service, _, _, publisher = _make_service(pages=[["vid1", "vid2"]], preexisting={"vid1"})
         job = service.run_search(query=sample_query, max_results=50)
 
         assert job.duplicates_skipped == 1
@@ -216,23 +198,15 @@ class TestAC06GlobalDeduplication:
         assert not any(e.video_id == "vid1" for e in publisher.published)
         assert any(e.video_id == "vid2" for e in publisher.published)
 
-    def test_known_video_is_not_re_recorded_in_ledger(
-        self, sample_query: SearchQuery
-    ) -> None:
-        service, _, ledger, _ = _make_service(
-            pages=[["vid1"]], preexisting={"vid1"}
-        )
+    def test_known_video_is_not_re_recorded_in_ledger(self, sample_query: SearchQuery) -> None:
+        service, _, ledger, _ = _make_service(pages=[["vid1"]], preexisting={"vid1"})
         service.run_search(query=sample_query, max_results=50)
 
         assert "vid1" not in ledger.recorded  # recorded = NEW writes only
 
-    def test_all_videos_known_yields_zero_discoveries(
-        self, sample_query: SearchQuery
-    ) -> None:
+    def test_all_videos_known_yields_zero_discoveries(self, sample_query: SearchQuery) -> None:
         all_known = {"vid1", "vid2", "vid3"}
-        service, _, _, publisher = _make_service(
-            pages=[list(all_known)], preexisting=all_known
-        )
+        service, _, _, publisher = _make_service(pages=[list(all_known)], preexisting=all_known)
         job = service.run_search(query=sample_query, max_results=50)
 
         assert job.new_discoveries == 0
@@ -243,9 +217,7 @@ class TestAC06GlobalDeduplication:
         self, sample_query: SearchQuery
     ) -> None:
         """Same videoId appearing on two different pages → emitted only once."""
-        service, _, _, publisher = _make_service(
-            pages=[["vid1", "vid2"], ["vid1", "vid3"]]
-        )
+        service, _, _, publisher = _make_service(pages=[["vid1", "vid2"], ["vid1", "vid3"]])
         job = service.run_search(query=sample_query, max_results=200)
 
         published_ids = [e.video_id for e in publisher.published]
@@ -277,9 +249,7 @@ class TestAC07Pagination:
         assert job.pages_fetched == 3
         assert job.new_discoveries == 30
 
-    def test_ceiling_stops_pagination_before_all_pages(
-        self, sample_query: SearchQuery
-    ) -> None:
+    def test_ceiling_stops_pagination_before_all_pages(self, sample_query: SearchQuery) -> None:
         """max_results=10, page has 10 videos → loop exits after page 0."""
         pages = [
             [f"vid_p0_{i}" for i in range(10)],  # page 0 → 10 results
@@ -291,13 +261,9 @@ class TestAC07Pagination:
         assert job.pages_fetched == 1
         assert job.new_discoveries == 10
 
-    def test_ceiling_limits_results_on_partial_page(
-        self, sample_query: SearchQuery
-    ) -> None:
+    def test_ceiling_limits_results_on_partial_page(self, sample_query: SearchQuery) -> None:
         """max_results=5 with a page of 10: page_size hint = 5, fake returns 5."""
-        service, youtube, _, publisher = _make_service(
-            pages=[[f"vid{i}" for i in range(10)]]
-        )
+        service, youtube, _, publisher = _make_service(pages=[[f"vid{i}" for i in range(10)]])
         job = service.run_search(query=sample_query, max_results=5)
 
         # First call passes page_size=min(50, 5)=5 → fake returns 5 videos
@@ -326,9 +292,7 @@ class TestAC08SearchFilters:
         assert forwarded_query.filters.language == "pt"
         assert forwarded_query.filters.video_duration == "long"
         assert forwarded_query.filters.region_code == "BR"
-        assert forwarded_query.filters.published_after == datetime(
-            2024, 1, 1, tzinfo=UTC
-        )
+        assert forwarded_query.filters.published_after == datetime(2024, 1, 1, tzinfo=UTC)
 
     def test_no_filters_still_produces_results(self, sample_query: SearchQuery) -> None:
         """Baseline: search without filters works normally."""

@@ -47,7 +47,9 @@ class BlobArtifactStore(ArtifactStorePort):
             blob_client.upload_blob(content, overwrite=True, content_type=content_type)
             return blob_client.url
         except Exception as exc:
-            raise ArtifactStoreError(f"Failed to upload artifact at '{canonical_path}': {exc}") from exc
+            raise ArtifactStoreError(
+                f"Failed to upload artifact at '{canonical_path}': {exc}"
+            ) from exc
 
     def _exists(self, canonical_path: str) -> bool:
         container, blob = _split_path(canonical_path)
@@ -55,8 +57,9 @@ class BlobArtifactStore(ArtifactStorePort):
             blob_client = self._service.get_blob_client(container=container, blob=blob)
             return blob_client.exists()
         except Exception as exc:
-            raise ArtifactStoreError(f"Failed blob existence check for '{canonical_path}': {exc}") from exc
-
+            raise ArtifactStoreError(
+                f"Failed blob existence check for '{canonical_path}': {exc}"
+            ) from exc
 
 
 def _split_path(path: str) -> tuple[str, str]:

@@ -59,7 +59,12 @@ class FakeYouTubeApi(YouTubeApiPort):
     ) -> SearchPage:
         page_index = int(page_token) if page_token else 0
         self.calls.append(
-            {"query": query, "page_size": page_size, "page_token": page_token, "page_index": page_index}
+            {
+                "query": query,
+                "page_size": page_size,
+                "page_token": page_token,
+                "page_index": page_index,
+            }
         )
 
         if self._fail_on_page is not None and page_index == self._fail_on_page:
