@@ -75,9 +75,7 @@ class VideoIngestionService:
 
             complete = self._artifact_store.artifacts_complete(paths)
             if not complete:
-                raise RuntimeError(
-                    "Artifact completeness validation failed after upload."
-                )
+                raise RuntimeError("Artifact completeness validation failed after upload.")
 
             self._ledger.upsert(payload.video_id, IngestionStatus.COMPLETED)
 
@@ -107,7 +105,6 @@ class VideoIngestionService:
             raise
 
 
-
 def parse_video_discovered_payload(raw: str) -> VideoDiscoveredPayload:
     """Validate and parse queue payload into a typed object."""
     try:
@@ -118,9 +115,7 @@ def parse_video_discovered_payload(raw: str) -> VideoDiscoveredPayload:
     required = ["search_job_id", "video_id", "occurred_at", "metadata"]
     missing = [key for key in required if key not in data]
     if missing:
-        raise InvalidVideoDiscoveredEventError(
-            f"Missing required fields: {', '.join(missing)}"
-        )
+        raise InvalidVideoDiscoveredEventError(f"Missing required fields: {', '.join(missing)}")
 
     if not isinstance(data["metadata"], dict):
         raise InvalidVideoDiscoveredEventError("metadata must be an object")
@@ -128,9 +123,7 @@ def parse_video_discovered_payload(raw: str) -> VideoDiscoveredPayload:
     try:
         occurred_at = datetime.fromisoformat(str(data["occurred_at"]).replace("Z", "+00:00"))
     except ValueError as exc:
-        raise InvalidVideoDiscoveredEventError(
-            "occurred_at must be an ISO-8601 datetime"
-        ) from exc
+        raise InvalidVideoDiscoveredEventError("occurred_at must be an ISO-8601 datetime") from exc
 
     return VideoDiscoveredPayload(
         search_job_id=str(data["search_job_id"]),
@@ -138,7 +131,6 @@ def parse_video_discovered_payload(raw: str) -> VideoDiscoveredPayload:
         occurred_at=occurred_at,
         metadata=data["metadata"],
     )
-
 
 
 def _build_ingestion_metadata_json(

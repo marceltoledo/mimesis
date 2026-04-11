@@ -58,21 +58,6 @@ output "video_metadata_container" {
   value       = azurerm_storage_container.video_metadata.name
 }
 
-output "video_discovery_function_app_name" {
-  description = "BC-01 Function App name."
-  value       = azurerm_linux_function_app.video_discovery.name
-}
-
-output "video_discovery_function_base_url" {
-  description = "BC-01 HTTP endpoint base URL."
-  value       = "https://${azurerm_linux_function_app.video_discovery.default_hostname}/api/video-discovery"
-}
-
-output "video_ingestion_function_app_name" {
-  description = "BC-02 Function App name."
-  value       = azurerm_linux_function_app.video_ingestion.name
-}
-
 output "app_insights_connection_string" {
   description = "Application Insights connection string — set as MIMESIS_APP_INSIGHTS_CONNECTION_STRING."
   value       = azurerm_application_insights.main.connection_string

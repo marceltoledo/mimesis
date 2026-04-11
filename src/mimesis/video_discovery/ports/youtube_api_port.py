@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
 
 from mimesis.video_discovery.domain.models import SearchQuery, VideoMetadata
 
@@ -20,7 +19,7 @@ class SearchPage:
     video_metadatas: list[tuple[str, VideoMetadata]]
     """List of (videoId, VideoMetadata) tuples for this page."""
 
-    next_page_token: Optional[str]
+    next_page_token: str | None
     """Opaque cursor to pass on the next call, or None when exhausted."""
 
 
@@ -32,7 +31,7 @@ class YouTubeApiPort(ABC):
         self,
         query: SearchQuery,
         page_size: int,
-        page_token: Optional[str] = None,
+        page_token: str | None = None,
     ) -> SearchPage:
         """Fetch a single page of search results.
 

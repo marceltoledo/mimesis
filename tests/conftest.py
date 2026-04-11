@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -25,7 +25,7 @@ def sample_query_with_filters() -> SearchQuery:
         keyword="storytelling",
         filters=SearchFilters(
             language="en",
-            published_after=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            published_after=datetime(2024, 1, 1, tzinfo=UTC),
             video_duration="medium",
             region_code="GB",
         ),
@@ -39,7 +39,7 @@ def sample_metadata() -> VideoMetadata:
         description="A comprehensive Python tutorial.",
         channel_id="UC_test_channel",
         channel_title="Test Channel",
-        published_at=datetime(2024, 6, 1, tzinfo=timezone.utc),
+        published_at=datetime(2024, 6, 1, tzinfo=UTC),
         duration="PT10M30S",
         view_count=42_000,
         like_count=1_200,

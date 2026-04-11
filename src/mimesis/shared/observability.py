@@ -32,6 +32,4 @@ def configure_observability(
     """
     os.environ.setdefault("OTEL_SERVICE_NAME", service_name)
     configure_azure_monitor(connection_string=connection_string)
-    logger.info(
-        "Application Insights telemetry configured | service_name=%s", service_name
-    )
+    logger.info("Application Insights telemetry configured | service_name=%s", service_name)

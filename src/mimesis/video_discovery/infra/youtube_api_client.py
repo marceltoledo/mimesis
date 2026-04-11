@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Any, cast
 
-from googleapiclient.discovery import build  # type: ignore[import-untyped]
-from googleapiclient.errors import HttpError  # type: ignore[import-untyped]
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 from mimesis.video_discovery.domain.exceptions import (
     QuotaExceededException,
@@ -28,24 +28,29 @@ _YT_API_SERVICE = "youtube"
 _YT_API_VERSION = "v3"
 
 
-def _safe_int(value: object) -> Optional[int]:
+def _safe_int(value: object) -> int | None:
     """Convert a YouTube statistics string value to int; return None if absent."""
     return int(str(value)) if value is not None else None
 
 
-def _parse_metadata(item: dict[str, object]) -> tuple[str, VideoMetadata]:
+def _parse_metadata(item: dict[str, Any]) -> tuple[str, VideoMetadata]:
     """Extract videoId and VideoMetadata from a ``videos.list`` resource item."""
     video_id: str = str(item["id"])
-    snippet: dict[str, object] = item.get("snippet", {})  # type: ignore[assignment]
-    details: dict[str, object] = item.get("contentDetails", {})  # type: ignore[assignment]
-    stats: dict[str, object] = item.get("statistics", {})  # type: ignore[assignment]
+    snippet = cast(dict[str, Any], item.get("snippet", {}))
+    details = cast(dict[str, Any], item.get("contentDetails", {}))
+    stats = cast(dict[str, Any], item.get("statistics", {}))
 
     published_at_raw = str(snippet.get("publishedAt", ""))
     published_at = datetime.fromisoformat(published_at_raw.replace("Z", "+00:00"))
 
-    thumbnails = snippet.get("thumbnails", {})
+    thumbnails = cast(dict[str, object], snippet.get("thumbnails", {}))
     tags_raw = snippet.get("tags")
-    tags: Optional[list[str]] = list(tags_raw) if tags_raw else None  # type: ignore[arg-type]
+    tags: list[str] | None = None
+    if isinstance(tags_raw, list):
+        tags = [str(tag) for tag in tags_raw]
+
+    default_language_raw = snippet.get("defaultLanguage")
+    default_language = str(default_language_raw) if default_language_raw is not None else None
 
     metadata = VideoMetadata(
         title=str(snippet.get("title", "")),
@@ -56,10 +61,10 @@ def _parse_metadata(item: dict[str, object]) -> tuple[str, VideoMetadata]:
         duration=str(details.get("duration", "")),
         view_count=_safe_int(stats.get("viewCount")) or 0,
         like_count=_safe_int(stats.get("likeCount")),
-        thumbnails=thumbnails,  # type: ignore[arg-type]
+        thumbnails=thumbnails,
         tags=tags,
         category_id=str(snippet.get("categoryId", "")),
-        default_language=snippet.get("defaultLanguage") and str(snippet["defaultLanguage"]),
+        default_language=default_language,
     )
     return video_id, metadata
 
@@ -79,7 +84,7 @@ class YouTubeApiClient(YouTubeApiPort):
         self,
         query: SearchQuery,
         page_size: int,
-        page_token: Optional[str] = None,
+        page_token: str | None = None,
     ) -> SearchPage:
         filters = query.filters
 
@@ -96,8 +101,8 @@ class YouTubeApiClient(YouTubeApiPort):
             if filters.language:
                 search_kwargs["relevanceLanguage"] = filters.language
             if filters.published_after:
-                search_kwargs["publishedAfter"] = (
-                    filters.published_after.strftime("%Y-%m-%dT%H:%M:%SZ")
+                search_kwargs["publishedAfter"] = filters.published_after.strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
                 )
             if filters.video_duration:
                 search_kwargs["videoDuration"] = filters.video_duration
@@ -109,20 +114,19 @@ class YouTubeApiClient(YouTubeApiPort):
                 self._service.search().list(**search_kwargs).execute()
             )
         except HttpError as exc:
-            if exc.resp.status == 403:  # type: ignore[union-attr]
+            if exc.resp.status == 403:
                 raise QuotaExceededException(str(exc)) from exc
             raise YouTubeApiError(str(exc)) from exc
 
-        items: list[dict[str, object]] = search_response.get("items", [])  # type: ignore[assignment]
-        next_page_token: Optional[str] = search_response.get("nextPageToken")  # type: ignore[assignment]
+        items = cast(list[dict[str, Any]], search_response.get("items", []))
+        next_page_token_raw = search_response.get("nextPageToken")
+        next_page_token = str(next_page_token_raw) if next_page_token_raw is not None else None
 
         if not items:
             return SearchPage(video_metadatas=[], next_page_token=None)
 
         # ── 2. videos.list (batch) ───────────────────────────────────────────
-        video_ids = ",".join(
-            str(item["id"]["videoId"]) for item in items  # type: ignore[index]
-        )
+        video_ids = ",".join(str(item["id"]["videoId"]) for item in items)
 
         try:
             videos_response: dict[str, object] = (
@@ -131,11 +135,11 @@ class YouTubeApiClient(YouTubeApiPort):
                 .execute()
             )
         except HttpError as exc:
-            if exc.resp.status == 403:  # type: ignore[union-attr]
+            if exc.resp.status == 403:
                 raise QuotaExceededException(str(exc)) from exc
             raise YouTubeApiError(str(exc)) from exc
 
-        video_items: list[dict[str, object]] = videos_response.get("items", [])  # type: ignore[assignment]
+        video_items = cast(list[dict[str, Any]], videos_response.get("items", []))
         results = [_parse_metadata(item) for item in video_items]
 
         logger.debug(

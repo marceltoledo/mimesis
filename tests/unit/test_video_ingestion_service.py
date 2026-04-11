@@ -61,7 +61,9 @@ class FakeLedger(IngestionLedgerPort):
             return self._record
         return None
 
-    def upsert(self, video_id: str, status: IngestionStatus, failure_reason: str | None = None) -> None:
+    def upsert(
+        self, video_id: str, status: IngestionStatus, failure_reason: str | None = None
+    ) -> None:
         self.upserts.append((video_id, status, failure_reason))
         self._record = IngestionRecord(video_id=video_id, status=status)
 
@@ -91,7 +93,6 @@ class FakePublisher(IngestedEventPublisherPort):
 
     def publish(self, event: VideoIngested) -> None:
         self.published.append(event)
-
 
 
 def _sample_payload(video_id: str = "vid123") -> VideoDiscoveredPayload:

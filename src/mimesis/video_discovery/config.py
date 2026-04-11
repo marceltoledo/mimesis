@@ -33,7 +33,7 @@ class VideoDiscoveryConfig:
     app_insights_connection_string: str
     """Application Insights connection string for telemetry."""
 
-    default_max_results: int = 15
+    default_max_results: int = 500
     """Default ceiling for paginated searches when callers omit max_results."""
 
     @classmethod
@@ -42,17 +42,11 @@ class VideoDiscoveryConfig:
         return cls(
             key_vault_url=_require("MIMESIS_KEY_VAULT_URL"),
             storage_account_url=_require("MIMESIS_STORAGE_ACCOUNT_URL"),
-            discovery_ledger_table=os.getenv(
-                "MIMESIS_DISCOVERY_LEDGER_TABLE", "discoveryLedger"
-            ),
+            discovery_ledger_table=os.getenv("MIMESIS_DISCOVERY_LEDGER_TABLE", "discoveryLedger"),
             service_bus_namespace=_require("MIMESIS_SERVICE_BUS_NAMESPACE"),
-            service_bus_queue=os.getenv(
-                "MIMESIS_SERVICE_BUS_QUEUE", "sb-queue-video-discovered"
-            ),
-            app_insights_connection_string=_require(
-                "MIMESIS_APP_INSIGHTS_CONNECTION_STRING"
-            ),
-            default_max_results=int(os.getenv("MIMESIS_DEFAULT_MAX_RESULTS", "15")),
+            service_bus_queue=os.getenv("MIMESIS_SERVICE_BUS_QUEUE", "sb-queue-video-discovered"),
+            app_insights_connection_string=_require("MIMESIS_APP_INSIGHTS_CONNECTION_STRING"),
+            default_max_results=int(os.getenv("MIMESIS_DEFAULT_MAX_RESULTS", "500")),
         )
 
 

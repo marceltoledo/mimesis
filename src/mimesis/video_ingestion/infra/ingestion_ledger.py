@@ -27,7 +27,9 @@ class TableIngestionLedger(IngestionLedgerPort):
         except ResourceNotFoundError:
             return None
         except Exception as exc:
-            raise IngestionLedgerError(f"Failed to read ingestion ledger for '{video_id}': {exc}") from exc
+            raise IngestionLedgerError(
+                f"Failed to read ingestion ledger for '{video_id}': {exc}"
+            ) from exc
 
         status_raw = str(entity.get("status", IngestionStatus.PENDING.value))
         try:
@@ -50,7 +52,9 @@ class TableIngestionLedger(IngestionLedgerPort):
             failure_reason=entity.get("failure_reason"),
         )
 
-    def upsert(self, video_id: str, status: IngestionStatus, failure_reason: str | None = None) -> None:
+    def upsert(
+        self, video_id: str, status: IngestionStatus, failure_reason: str | None = None
+    ) -> None:
         entity = {
             "PartitionKey": "video",
             "RowKey": video_id,
@@ -61,4 +65,6 @@ class TableIngestionLedger(IngestionLedgerPort):
         try:
             self._client.upsert_entity(mode=UpdateMode.MERGE, entity=entity)
         except Exception as exc:
-            raise IngestionLedgerError(f"Failed to upsert ingestion ledger for '{video_id}': {exc}") from exc
+            raise IngestionLedgerError(
+                f"Failed to upsert ingestion ledger for '{video_id}': {exc}"
+            ) from exc

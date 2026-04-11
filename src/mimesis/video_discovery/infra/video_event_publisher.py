@@ -52,9 +52,7 @@ class ServiceBusEventPublisher(EventPublisherPort):
         )
         try:
             self._sender.send_messages(message)
-            logger.debug(
-                "VideoDiscovered sent to Service Bus | video_id=%s", event.video_id
-            )
+            logger.debug("VideoDiscovered sent to Service Bus | video_id=%s", event.video_id)
         except Exception as exc:
             raise EventPublisherError(
                 f"Failed to publish VideoDiscovered for video_id={event.video_id!r}: {exc}"

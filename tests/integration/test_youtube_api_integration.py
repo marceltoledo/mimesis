@@ -11,12 +11,13 @@ Run with: pytest -m integration tests/integration/test_youtube_api_integration.p
 from __future__ import annotations
 
 import os
+from datetime import UTC
 
 import pytest
 
+from mimesis.video_discovery.domain.models import SearchQuery
 from mimesis.video_discovery.infra.secrets_provider import SecretsProvider
 from mimesis.video_discovery.infra.youtube_api_client import YouTubeApiClient
-from mimesis.video_discovery.domain.models import SearchQuery
 
 
 def _get_client() -> YouTubeApiClient:
@@ -49,7 +50,7 @@ class TestYouTubeApiLive:
 
     def test_search_with_all_filters_does_not_raise(self) -> None:
         """AC-08: Filters are forwarded to the API without errors."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from mimesis.video_discovery.domain.models import SearchFilters
 
@@ -59,7 +60,7 @@ class TestYouTubeApiLive:
                 keyword="python",
                 filters=SearchFilters(
                     language="en",
-                    published_after=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                    published_after=datetime(2024, 1, 1, tzinfo=UTC),
                     video_duration="short",
                     region_code="GB",
                 ),
