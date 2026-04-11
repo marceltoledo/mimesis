@@ -365,15 +365,6 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "function_failure_crit
   tags = local.tags
 }
 
-resource "azurerm_servicebus_queue" "video_ingested" {
-  name         = "sb-queue-video-ingested"
-  namespace_id = azurerm_servicebus_namespace.main.id
-
-  requires_duplicate_detection            = true
-  duplicate_detection_history_time_window = "PT10M"
-  max_delivery_count                      = 10
-}
-
 # ── Log Analytics Workspace (required by workspace-based App Insights) ────────
 
 resource "azurerm_log_analytics_workspace" "main" {
