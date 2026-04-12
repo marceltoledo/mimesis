@@ -14,7 +14,7 @@ env:
   # Deterministic DEV resource group derived from Terraform locals:
   # prefix = "mimesis-dev", rg = "mimesis-dev-rg"
   RESOURCE_GROUP: mimesis-dev-rg
-  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID || vars.AZURE_CLIENT_ID }}
+  AZURE_CLIENT_ID: cd0f8931-941e-4a3c-8ede-6b51d0e88375
   AZURE_TENANT_ID: 537312d2-c122-4075-ada6-72ac5582edc1
   AZURE_SUBSCRIPTION_ID: 4bd495aa-ee07-4b54-a678-86d545b31c24
   AZURE_BC01_FUNCTION_APP_NAME: ${{ secrets.AZURE_BC01_FUNCTION_APP_NAME || vars.AZURE_BC01_FUNCTION_APP_NAME }}
