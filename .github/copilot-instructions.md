@@ -53,6 +53,11 @@ All agents and engineers MUST follow these conventions. They are finalised and n
 - Solution Designs follow the DDD methodology defined in `.github/agents/solution-architect.agent.md`.
 - After each design is finalised, the architect updates `.github/docs/mimesis-architecture.md`.
 
+### Operational Handoff Standards
+- When the user requests issue tracking, create GitHub issues using GitHub CLI (`gh issue create`).
+- For large issue bodies, write markdown to a temporary file and pass it via `--body-file`.
+- If label creation fails because labels do not exist in the repository, retry without labels (or create labels only if explicitly requested).
+
 ---
 
 # Azure Infrastructure AI Agent — FinOps-Optimized

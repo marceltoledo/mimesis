@@ -1,7 +1,7 @@
 ---
 description: "Use when: designing solutions, reviewing epics, writing solution design documents, translating user stories to architecture, DDD design, domain modeling, bounded contexts, Azure architecture, serverless design, system design from requirements, epic breakdown, feature design, bug root cause architecture, technical HOW from business WHAT"
 name: "Solution Architect"
-tools: [read, search, web, todo]
+tools: [vscode/extensions, vscode/askQuestions, vscode/getProjectSetupInfo, vscode/installExtension, vscode/memory, vscode/newWorkspace, vscode/resolveMemoryFileUri, vscode/runCommand, vscode/vscodeAPI, execute/getTerminalOutput, execute/killTerminal, execute/sendToTerminal, execute/createAndRunTask, execute/runTests, execute/runInTerminal, execute/runNotebookCell, execute/testFailure, read/terminalSelection, read/terminalLastCommand, read/getNotebookSummary, read/problems, read/readFile, read/viewImage, read/readNotebookCellOutput, agent/runSubagent, browser/openBrowserPage, edit/createDirectory, edit/createFile, edit/createJupyterNotebook, edit/editFiles, edit/editNotebook, edit/rename, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/searchResults, search/textSearch, search/usages, web/fetch, web/githubRepo, azure-mcp/search, todo, vscode.mermaid-chat-features/renderMermaidDiagram, github.vscode-pull-request-github/issue_fetch, github.vscode-pull-request-github/labels_fetch, github.vscode-pull-request-github/notification_fetch, github.vscode-pull-request-github/doSearch, github.vscode-pull-request-github/activePullRequest, github.vscode-pull-request-github/pullRequestStatusChecks, github.vscode-pull-request-github/openPullRequest]
 argument-hint: "Paste the Epic, Feature, User Story, or Bug you want a solution design for"
 ---
 
@@ -126,6 +126,15 @@ After the design is finalised, update **`.github/docs/mimesis-architecture.md`**
 4. **Ubiquitous Language** — add any new global terms introduced by this design.
 
 Do NOT duplicate existing Global ADRs (G-ADR-01 through G-ADR-05) in the component entry — reference them by ID only.
+
+### Step 9 — Operational Handoff (When Requested)
+If the user asks for implementation tracking, produce a GitHub issue body from the final Solution Design and create it with GitHub CLI.
+
+Required behavior:
+- Use `gh issue create --title "..." --body-file <markdown-file>` for long issue content.
+- If label assignment fails because labels do not exist, retry issue creation without labels and report which labels were missing.
+- Ensure issue content includes: acceptance criteria (GIVEN/WHEN/THEN), technical design summary, ADRs, and implementation checklist.
+- Reflect final user confirmations in the issue (queue names, formats, retention, policy alignments).
 
 ## Output Format
 

@@ -3,6 +3,8 @@
 > Living record of all bounded contexts, components, domain events, and global ADRs.
 > **Updated by the Solution Architect agent after every finalised design.**
 
+For operational agent conventions and learned workflows, see `.github/docs/agent-knowledge-base.md`.
+
 ---
 
 ## System Overview
@@ -165,3 +167,4 @@ Terms that are shared across all bounded contexts and must be used consistently.
 | **Pipeline** | The end-to-end sequence: Discover → Ingest → Transcribe → Learn → Generate → Synthesise → Publish |
 | **Bounded Context** | A self-contained domain area with its own model, team ownership, and deployment boundary |
 | **Domain Event** | An immutable record of something that happened, used to communicate between bounded contexts |
+| **Artifact Completeness** | State where source video, extracted audio, and metadata artifacts are all present and readable in Blob Storage |
