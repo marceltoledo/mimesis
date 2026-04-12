@@ -246,7 +246,7 @@ resource "azurerm_monitor_diagnostic_setting" "service_bus_logs" {
 resource "azurerm_monitor_metric_alert" "dlq_count_warning" {
   name                = "${local.prefix}-dlq-count-warning"
   resource_group_name = azurerm_resource_group.main.name
-  scopes              = [azurerm_servicebus_queue.video_discovered.id]
+  scopes              = [azurerm_servicebus_namespace.main.id]
   description         = "Warning when DLQ count is >= 1 for 10 minutes."
 
   severity    = 2
@@ -254,7 +254,7 @@ resource "azurerm_monitor_metric_alert" "dlq_count_warning" {
   window_size = "PT15M"
 
   criteria {
-    metric_namespace = "Microsoft.ServiceBus/namespaces/queues"
+    metric_namespace = "Microsoft.ServiceBus/namespaces"
     metric_name      = "DeadletteredMessages"
     aggregation      = "Average"
     operator         = "GreaterThanOrEqual"
@@ -267,7 +267,7 @@ resource "azurerm_monitor_metric_alert" "dlq_count_warning" {
 resource "azurerm_monitor_metric_alert" "dlq_count_critical" {
   name                = "${local.prefix}-dlq-count-critical"
   resource_group_name = azurerm_resource_group.main.name
-  scopes              = [azurerm_servicebus_queue.video_discovered.id]
+  scopes              = [azurerm_servicebus_namespace.main.id]
   description         = "Critical when DLQ count is >= 5 for 10 minutes."
 
   severity    = 0
@@ -275,7 +275,7 @@ resource "azurerm_monitor_metric_alert" "dlq_count_critical" {
   window_size = "PT15M"
 
   criteria {
-    metric_namespace = "Microsoft.ServiceBus/namespaces/queues"
+    metric_namespace = "Microsoft.ServiceBus/namespaces"
     metric_name      = "DeadletteredMessages"
     aggregation      = "Average"
     operator         = "GreaterThanOrEqual"

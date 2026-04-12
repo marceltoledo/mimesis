@@ -14,22 +14,49 @@ env:
   # Deterministic DEV resource group derived from Terraform locals:
   # prefix = "mimesis-dev", rg = "mimesis-dev-rg"
   RESOURCE_GROUP: mimesis-dev-rg
+  AZURE_CLIENT_ID: cd0f8931-941e-4a3c-8ede-6b51d0e88375
+  AZURE_TENANT_ID: 537312d2-c122-4075-ada6-72ac5582edc1
+  AZURE_SUBSCRIPTION_ID: 4bd495aa-ee07-4b54-a678-86d545b31c24
+  AZURE_BC01_FUNCTION_APP_NAME: ${{ secrets.AZURE_BC01_FUNCTION_APP_NAME || vars.AZURE_BC01_FUNCTION_APP_NAME }}
+  AZURE_BC02_FUNCTION_APP_NAME: ${{ secrets.AZURE_BC02_FUNCTION_APP_NAME || vars.AZURE_BC02_FUNCTION_APP_NAME }}
+  AZURE_BC01_FUNCTION_URL: ${{ secrets.AZURE_BC01_FUNCTION_URL || vars.AZURE_BC01_FUNCTION_URL }}
+  AZURE_BC01_FUNCTION_KEY: ${{ secrets.AZURE_BC01_FUNCTION_KEY || vars.AZURE_BC01_FUNCTION_KEY }}
 
 jobs:
   # ── 1. Terraform: provision / update DEV infrastructure ─────────────────────
   terraform-dev:
     name: Terraform DEV (init → plan → apply)
     runs-on: ubuntu-latest
+    environment: dev
+    env:
+      ARM_USE_OIDC: true
+      ARM_USE_AZUREAD: true
+      ARM_CLIENT_ID: cd0f8931-941e-4a3c-8ede-6b51d0e88375
+      ARM_TENANT_ID: 537312d2-c122-4075-ada6-72ac5582edc1
+      ARM_SUBSCRIPTION_ID: 4bd495aa-ee07-4b54-a678-86d545b31c24
 
     steps:
       - uses: actions/checkout@v4
 
+      - name: Preflight required Azure inputs
+        run: |
+          missing=0
+          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+            if [ -z "${!var}" ]; then
+              echo "Missing required value: $var (set as repository secret or variable)"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -39,6 +66,20 @@ jobs:
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init -backend-config=backend.hcl
+
+      - name: Import pre-provisioned Function Apps
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_VAR_youtube_api_key: ${{ secrets.AZURE_YOUTUBE_API_KEY }}
+        run: |
+          SUB="4bd495aa-ee07-4b54-a678-86d545b31c24"
+          RG="mimesis-dev-rg"
+          terraform import -var-file=dev.tfvars \
+            azurerm_linux_function_app.video_discovery \
+            "/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Web/sites/mimesis-dev-fd-fn" || true
+          terraform import -var-file=dev.tfvars \
+            azurerm_linux_function_app.video_ingestion \
+            "/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Web/sites/mimesis-dev-fi-fn" || true
 
       - name: Terraform Plan
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -60,16 +101,30 @@ jobs:
     name: Deploy Function Apps DEV
     runs-on: ubuntu-latest
     needs: terraform-dev
+    environment: dev
 
     steps:
       - uses: actions/checkout@v4
 
+      - name: Preflight required deploy inputs
+        run: |
+          missing=0
+          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_BC01_FUNCTION_APP_NAME AZURE_BC02_FUNCTION_APP_NAME; do
+            if [ -z "${!var}" ]; then
+              echo "Missing required value: $var (set as repository secret or variable)"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -101,7 +156,7 @@ jobs:
         run: |
           az functionapp deployment source config-zip \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --name "${{ secrets.AZURE_BC01_FUNCTION_APP_NAME }}" \
+            --name "${{ env.AZURE_BC01_FUNCTION_APP_NAME }}" \
             --src deploy-bc01.zip
 
       # BC-02: Video Ingestion
@@ -120,7 +175,7 @@ jobs:
         run: |
           az functionapp deployment source config-zip \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --name "${{ secrets.AZURE_BC02_FUNCTION_APP_NAME }}" \
+            --name "${{ env.AZURE_BC02_FUNCTION_APP_NAME }}" \
             --src deploy-bc02.zip
 
   # ── 3. Smoke test: verify BC-01 HTTP endpoint is reachable ──────────────────
@@ -128,20 +183,34 @@ jobs:
     name: Smoke Test DEV (BC-01)
     runs-on: ubuntu-latest
     needs: deploy-functions-dev
+    environment: dev
 
     steps:
+      - name: Preflight required smoke inputs
+        run: |
+          missing=0
+          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_BC01_FUNCTION_URL AZURE_BC01_FUNCTION_KEY; do
+            if [ -z "${!var}" ]; then
+              echo "Missing required value: $var (set as repository secret or variable)"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
       - name: Smoke test BC-01 endpoint
         run: |
           http_status=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "x-functions-key: ${{ secrets.AZURE_BC01_FUNCTION_KEY }}" \
-            "${{ secrets.AZURE_BC01_FUNCTION_URL }}")
+            -H "x-functions-key: ${{ env.AZURE_BC01_FUNCTION_KEY }}" \
+            "${{ env.AZURE_BC01_FUNCTION_URL }}")
           echo "HTTP status: $http_status"
           if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
             echo "Smoke test FAILED — HTTP $http_status returned by BC-01 endpoint."
