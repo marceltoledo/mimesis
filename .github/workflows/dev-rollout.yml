@@ -31,9 +31,9 @@ jobs:
     env:
       ARM_USE_OIDC: true
       ARM_USE_AZUREAD: true
-      ARM_CLIENT_ID: ${{ env.AZURE_CLIENT_ID }}
-      ARM_TENANT_ID: ${{ env.AZURE_TENANT_ID }}
-      ARM_SUBSCRIPTION_ID: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      ARM_CLIENT_ID: cd0f8931-941e-4a3c-8ede-6b51d0e88375
+      ARM_TENANT_ID: 537312d2-c122-4075-ada6-72ac5582edc1
+      ARM_SUBSCRIPTION_ID: 4bd495aa-ee07-4b54-a678-86d545b31c24
 
     steps:
       - uses: actions/checkout@v4
