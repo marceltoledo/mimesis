@@ -67,6 +67,20 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init -backend-config=backend.hcl
 
+      - name: Import pre-provisioned Function Apps
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_VAR_youtube_api_key: ${{ secrets.AZURE_YOUTUBE_API_KEY }}
+        run: |
+          SUB="4bd495aa-ee07-4b54-a678-86d545b31c24"
+          RG="mimesis-dev-rg"
+          terraform import -var-file=dev.tfvars \
+            azurerm_linux_function_app.video_discovery \
+            "/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Web/sites/mimesis-dev-fd-fn" || true
+          terraform import -var-file=dev.tfvars \
+            azurerm_linux_function_app.video_ingestion \
+            "/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Web/sites/mimesis-dev-fi-fn" || true
+
       - name: Terraform Plan
         working-directory: ${{ env.TF_WORKING_DIR }}
         env:
