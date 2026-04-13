@@ -10,17 +10,21 @@ permissions:
   contents: read
 
 env:
-  AZURE_CLIENT_ID: cd0f8931-941e-4a3c-8ede-6b51d0e88375
-  AZURE_TENANT_ID: 537312d2-c122-4075-ada6-72ac5582edc1
-  AZURE_SUBSCRIPTION_ID: 4bd495aa-ee07-4b54-a678-86d545b31c24
-  AZURE_BC01_FUNCTION_URL: ${{ secrets.AZURE_BC01_FUNCTION_URL || vars.AZURE_BC01_FUNCTION_URL }}
-  AZURE_BC01_FUNCTION_KEY: ${{ secrets.AZURE_BC01_FUNCTION_KEY || vars.AZURE_BC01_FUNCTION_KEY }}
+  # No workflow-level env — all credentials are DEV environment secrets
+  # resolved per-job via environment: dev below.
 
 jobs:
   # ── Smoke test: verify BC-01 HTTP endpoint is reachable ─────────────────────
   smoke-dev:
     name: Smoke Test DEV (BC-01)
     runs-on: ubuntu-latest
+    environment: dev
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_BC01_FUNCTION_URL: ${{ secrets.AZURE_BC01_FUNCTION_URL }}
+      AZURE_BC01_FUNCTION_KEY: ${{ secrets.AZURE_BC01_FUNCTION_KEY }}
 
     steps:
       - name: Preflight required smoke inputs
