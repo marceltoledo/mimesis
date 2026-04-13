@@ -90,6 +90,7 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       AZURE_BC01_FUNCTION_APP_NAME: ${{ secrets.AZURE_BC01_FUNCTION_APP_NAME }}
       AZURE_BC02_FUNCTION_APP_NAME: ${{ secrets.AZURE_BC02_FUNCTION_APP_NAME }}
+      AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
 
     steps:
       - uses: actions/checkout@v4
@@ -97,7 +98,7 @@ jobs:
       - name: Preflight required deploy inputs
         run: |
           missing=0
-          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_BC01_FUNCTION_APP_NAME AZURE_BC02_FUNCTION_APP_NAME; do
+          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_BC01_FUNCTION_APP_NAME AZURE_BC02_FUNCTION_APP_NAME AZURE_STORAGE_ACCOUNT; do
             if [ -z "${!var}" ]; then
               echo "Missing required value: $var (set as repository secret or variable)"
               missing=1
@@ -140,14 +141,20 @@ jobs:
             --exclude "*.pyc" \
             --exclude "*/__pycache__/*"
 
+      # BC-01: Upload zip to its FC1 deployment blob container.
+      # FC1 (Flex Consumption) does not use Kudu zipdeploy; the runtime reads
+      # the package from the blob container configured in functionAppConfig.
       - name: Deploy BC-01 (Video Discovery)
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
         run: |
-          az functionapp deploy \
-            --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --name "${{ env.AZURE_BC01_FUNCTION_APP_NAME }}" \
-            --src-path deploy-bc01.zip \
-            --type zip \
-            --async true
+          az storage blob upload \
+            --account-name "$AZURE_STORAGE_ACCOUNT" \
+            --container-name fn-fd-deploy \
+            --name run-from-package.zip \
+            --file deploy-bc01.zip \
+            --overwrite \
+            --auth-mode login
 
       # BC-02: Video Ingestion
       # Packages functions/video-ingestion/ (includes host.json) with all deps.
@@ -161,14 +168,18 @@ jobs:
             --exclude "*.pyc" \
             --exclude "*/__pycache__/*"
 
+      # BC-02: Upload zip to its FC1 deployment blob container.
       - name: Deploy BC-02 (Video Ingestion)
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
         run: |
-          az functionapp deploy \
-            --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --name "${{ env.AZURE_BC02_FUNCTION_APP_NAME }}" \
-            --src-path deploy-bc02.zip \
-            --type zip \
-            --async true
+          az storage blob upload \
+            --account-name "$AZURE_STORAGE_ACCOUNT" \
+            --container-name fn-fi-deploy \
+            --name run-from-package.zip \
+            --file deploy-bc02.zip \
+            --overwrite \
+            --auth-mode login
 
   # ── 3. Smoke test: verify BC-01 HTTP endpoint is reachable ──────────────────
   smoke-dev:
