@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 4.0"
     }
+    azapi = {
+      source  = "azure/azapi"
+      version = "~> 2.0"
+    }
   }
 
   # Backend populated via backend.hcl passed at terraform init.
@@ -23,3 +27,5 @@ provider "azurerm" {
     }
   }
 }
+
+provider "azapi" {}

@@ -60,13 +60,13 @@ resource "azurerm_storage_account" "main" {
 }
 
 resource "azurerm_storage_table" "discovery_ledger" {
-  name               = "discoveryLedger"
-  storage_account_id = azurerm_storage_account.main.id
+  name                 = "discoveryLedger"
+  storage_account_name = azurerm_storage_account.main.name
 }
 
 resource "azurerm_storage_table" "ingestion_ledger" {
-  name               = "ingestionLedger"
-  storage_account_id = azurerm_storage_account.main.id
+  name                 = "ingestionLedger"
+  storage_account_name = azurerm_storage_account.main.name
 }
 
 resource "azurerm_storage_container" "raw_videos" {
@@ -159,87 +159,110 @@ resource "azurerm_service_plan" "functions" {
   tags                = local.tags
 }
 
-resource "azurerm_linux_function_app_flex_consumption" "video_discovery" {
-  name                = local.video_discovery_function_app_name
-  resource_group_name = azurerm_resource_group.main.name
-  location            = var.location
-
-  service_plan_id = azurerm_service_plan.functions.id
-
-  storage_container_type            = "blobContainer"
-  storage_container_endpoint        = "${azurerm_storage_account.main.primary_blob_endpoint}${azurerm_storage_container.fn_fd_deploy.name}"
-  storage_authentication_type       = "UserAssignedIdentity"
-  storage_user_assigned_identity_id = azurerm_user_assigned_identity.main.id
-
-  runtime_name    = "python"
-  runtime_version = "3.12"
-
-  maximum_instance_count = 5
-  instance_memory_in_mb  = 2048
-
-  https_only = true
+resource "azapi_resource" "video_discovery" {
+  type      = "Microsoft.Web/sites@2024-04-01"
+  name      = local.video_discovery_function_app_name
+  location  = var.location
+  parent_id = azurerm_resource_group.main.id
 
   identity {
     type         = "UserAssigned"
     identity_ids = [azurerm_user_assigned_identity.main.id]
   }
 
-  site_config {}
-
-  app_settings = {
-    APPINSIGHTS_INSTRUMENTATIONKEY        = azurerm_application_insights.main.instrumentation_key
-    APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.main.connection_string
-
-    MIMESIS_KEY_VAULT_URL                  = azurerm_key_vault.main.vault_uri
-    MIMESIS_STORAGE_ACCOUNT_URL            = azurerm_storage_account.main.primary_table_endpoint
-    MIMESIS_DISCOVERY_LEDGER_TABLE         = azurerm_storage_table.discovery_ledger.name
-    MIMESIS_SERVICE_BUS_NAMESPACE          = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net"
-    MIMESIS_SERVICE_BUS_QUEUE              = azurerm_servicebus_queue.video_discovered.name
-    MIMESIS_DEFAULT_MAX_RESULTS            = "15"
-    MIMESIS_APP_INSIGHTS_CONNECTION_STRING = azurerm_application_insights.main.connection_string
+  body = {
+    kind = "functionapp,linux"
+    properties = {
+      serverFarmId = azurerm_service_plan.functions.id
+      httpsOnly    = true
+      functionAppConfig = {
+        deployment = {
+          storage = {
+            type  = "blobContainer"
+            value = "${azurerm_storage_account.main.primary_blob_endpoint}${azurerm_storage_container.fn_fd_deploy.name}"
+            authentication = {
+              type                           = "UserAssignedIdentity"
+              userAssignedIdentityResourceId = azurerm_user_assigned_identity.main.id
+            }
+          }
+        }
+        scaleAndConcurrency = {
+          instanceMemoryMB     = 2048
+          maximumInstanceCount = 5
+        }
+        runtime = {
+          name    = "python"
+          version = "3.12"
+        }
+      }
+      siteConfig = {
+        appSettings = [
+          { name = "APPINSIGHTS_INSTRUMENTATIONKEY",        value = azurerm_application_insights.main.instrumentation_key },
+          { name = "APPLICATIONINSIGHTS_CONNECTION_STRING", value = azurerm_application_insights.main.connection_string },
+          { name = "MIMESIS_KEY_VAULT_URL",                  value = azurerm_key_vault.main.vault_uri },
+          { name = "MIMESIS_STORAGE_ACCOUNT_URL",            value = azurerm_storage_account.main.primary_table_endpoint },
+          { name = "MIMESIS_DISCOVERY_LEDGER_TABLE",         value = azurerm_storage_table.discovery_ledger.name },
+          { name = "MIMESIS_SERVICE_BUS_NAMESPACE",          value = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net" },
+          { name = "MIMESIS_SERVICE_BUS_QUEUE",              value = azurerm_servicebus_queue.video_discovered.name },
+          { name = "MIMESIS_DEFAULT_MAX_RESULTS",            value = "15" },
+          { name = "MIMESIS_APP_INSIGHTS_CONNECTION_STRING", value = azurerm_application_insights.main.connection_string },
+        ]
+      }
+    }
   }
 
   tags = local.tags
 }
 
-resource "azurerm_linux_function_app_flex_consumption" "video_ingestion" {
-  name                = local.video_ingestion_function_app_name
-  resource_group_name = azurerm_resource_group.main.name
-  location            = var.location
-
-  service_plan_id = azurerm_service_plan.functions.id
-
-  storage_container_type            = "blobContainer"
-  storage_container_endpoint        = "${azurerm_storage_account.main.primary_blob_endpoint}${azurerm_storage_container.fn_fi_deploy.name}"
-  storage_authentication_type       = "UserAssignedIdentity"
-  storage_user_assigned_identity_id = azurerm_user_assigned_identity.main.id
-
-  runtime_name    = "python"
-  runtime_version = "3.12"
-
-  maximum_instance_count = 5
-  instance_memory_in_mb  = 2048
-
-  https_only = true
+resource "azapi_resource" "video_ingestion" {
+  type      = "Microsoft.Web/sites@2024-04-01"
+  name      = local.video_ingestion_function_app_name
+  location  = var.location
+  parent_id = azurerm_resource_group.main.id
 
   identity {
     type         = "UserAssigned"
     identity_ids = [azurerm_user_assigned_identity.main.id]
   }
 
-  site_config {}
-
-  app_settings = {
-    APPINSIGHTS_INSTRUMENTATIONKEY        = azurerm_application_insights.main.instrumentation_key
-    APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.main.connection_string
-
-    MIMESIS_STORAGE_ACCOUNT_URL            = azurerm_storage_account.main.primary_table_endpoint
-    MIMESIS_INGESTION_LEDGER_TABLE         = azurerm_storage_table.ingestion_ledger.name
-    MIMESIS_SERVICE_BUS_NAMESPACE          = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net"
-    MIMESIS_SERVICE_BUS_INGESTED_QUEUE     = azurerm_servicebus_queue.video_ingested.name
-    MIMESIS_APP_INSIGHTS_CONNECTION_STRING = azurerm_application_insights.main.connection_string
-
-    MIMESIS_SERVICE_BUS__fullyQualifiedNamespace = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net"
+  body = {
+    kind = "functionapp,linux"
+    properties = {
+      serverFarmId = azurerm_service_plan.functions.id
+      httpsOnly    = true
+      functionAppConfig = {
+        deployment = {
+          storage = {
+            type  = "blobContainer"
+            value = "${azurerm_storage_account.main.primary_blob_endpoint}${azurerm_storage_container.fn_fi_deploy.name}"
+            authentication = {
+              type                           = "UserAssignedIdentity"
+              userAssignedIdentityResourceId = azurerm_user_assigned_identity.main.id
+            }
+          }
+        }
+        scaleAndConcurrency = {
+          instanceMemoryMB     = 2048
+          maximumInstanceCount = 5
+        }
+        runtime = {
+          name    = "python"
+          version = "3.12"
+        }
+      }
+      siteConfig = {
+        appSettings = [
+          { name = "APPINSIGHTS_INSTRUMENTATIONKEY",        value = azurerm_application_insights.main.instrumentation_key },
+          { name = "APPLICATIONINSIGHTS_CONNECTION_STRING", value = azurerm_application_insights.main.connection_string },
+          { name = "MIMESIS_STORAGE_ACCOUNT_URL",            value = azurerm_storage_account.main.primary_table_endpoint },
+          { name = "MIMESIS_INGESTION_LEDGER_TABLE",         value = azurerm_storage_table.ingestion_ledger.name },
+          { name = "MIMESIS_SERVICE_BUS_NAMESPACE",          value = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net" },
+          { name = "MIMESIS_SERVICE_BUS_INGESTED_QUEUE",     value = azurerm_servicebus_queue.video_ingested.name },
+          { name = "MIMESIS_APP_INSIGHTS_CONNECTION_STRING", value = azurerm_application_insights.main.connection_string },
+          { name = "MIMESIS_SERVICE_BUS__fullyQualifiedNamespace", value = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net" },
+        ]
+      }
+    }
   }
 
   tags = local.tags
