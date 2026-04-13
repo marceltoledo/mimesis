@@ -142,10 +142,12 @@ jobs:
 
       - name: Deploy BC-01 (Video Discovery)
         run: |
-          az functionapp deployment source config-zip \
+          az functionapp deploy \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
             --name "${{ env.AZURE_BC01_FUNCTION_APP_NAME }}" \
-            --src deploy-bc01.zip
+            --src-path deploy-bc01.zip \
+            --type zip \
+            --async true
 
       # BC-02: Video Ingestion
       # Packages functions/video-ingestion/ (includes host.json) with all deps.
@@ -161,10 +163,12 @@ jobs:
 
       - name: Deploy BC-02 (Video Ingestion)
         run: |
-          az functionapp deployment source config-zip \
+          az functionapp deploy \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
             --name "${{ env.AZURE_BC02_FUNCTION_APP_NAME }}" \
-            --src deploy-bc02.zip
+            --src-path deploy-bc02.zip \
+            --type zip \
+            --async true
 
   # ── 3. Smoke test: verify BC-01 HTTP endpoint is reachable ──────────────────
   smoke-dev:
