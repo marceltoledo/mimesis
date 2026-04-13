@@ -60,31 +60,39 @@ resource "azurerm_storage_account" "main" {
 }
 
 resource "azurerm_storage_table" "discovery_ledger" {
-  name                 = "discoveryLedger"
-  storage_account_name = azurerm_storage_account.main.name
+  name               = "discoveryLedger"
+  storage_account_id = azurerm_storage_account.main.id
 }
 
 resource "azurerm_storage_table" "ingestion_ledger" {
-  name                 = "ingestionLedger"
-  storage_account_name = azurerm_storage_account.main.name
+  name               = "ingestionLedger"
+  storage_account_id = azurerm_storage_account.main.id
 }
 
 resource "azurerm_storage_container" "raw_videos" {
-  name                  = "raw-videos"
-  storage_account_name  = azurerm_storage_account.main.name
-  container_access_type = "private"
+  name               = "raw-videos"
+  storage_account_id = azurerm_storage_account.main.id
 }
 
 resource "azurerm_storage_container" "extracted_audio" {
-  name                  = "extracted-audio"
-  storage_account_name  = azurerm_storage_account.main.name
-  container_access_type = "private"
+  name               = "extracted-audio"
+  storage_account_id = azurerm_storage_account.main.id
 }
 
 resource "azurerm_storage_container" "video_metadata" {
-  name                  = "video-metadata"
-  storage_account_name  = azurerm_storage_account.main.name
-  container_access_type = "private"
+  name               = "video-metadata"
+  storage_account_id = azurerm_storage_account.main.id
+}
+
+# Deployment artifact containers for FC1 Flex Consumption function apps.
+resource "azurerm_storage_container" "fn_fd_deploy" {
+  name               = "fn-fd-deploy"
+  storage_account_id = azurerm_storage_account.main.id
+}
+
+resource "azurerm_storage_container" "fn_fi_deploy" {
+  name               = "fn-fi-deploy"
+  storage_account_id = azurerm_storage_account.main.id
 }
 
 resource "azurerm_storage_management_policy" "main" {
@@ -147,31 +155,36 @@ resource "azurerm_service_plan" "functions" {
   resource_group_name = azurerm_resource_group.main.name
   location            = var.location
   os_type             = "Linux"
-  sku_name            = "B1"
+  sku_name            = "FC1"
   tags                = local.tags
 }
 
-resource "azurerm_linux_function_app" "video_discovery" {
+resource "azurerm_linux_function_app_flex_consumption" "video_discovery" {
   name                = local.video_discovery_function_app_name
   resource_group_name = azurerm_resource_group.main.name
   location            = var.location
 
-  service_plan_id             = azurerm_service_plan.functions.id
-  storage_account_name        = azurerm_storage_account.main.name
-  storage_account_access_key  = azurerm_storage_account.main.primary_access_key
-  https_only                  = true
-  functions_extension_version = "~4"
+  service_plan_id = azurerm_service_plan.functions.id
+
+  storage_container_type            = "blobContainer"
+  storage_container_endpoint        = "${azurerm_storage_account.main.primary_blob_endpoint}${azurerm_storage_container.fn_fd_deploy.name}"
+  storage_authentication_type       = "UserAssignedIdentity"
+  storage_user_assigned_identity_id = azurerm_user_assigned_identity.main.id
+
+  runtime_name    = "python"
+  runtime_version = "3.12"
+
+  maximum_instance_count = 5
+  instance_memory_in_mb  = 2048
+
+  https_only = true
 
   identity {
     type         = "UserAssigned"
     identity_ids = [azurerm_user_assigned_identity.main.id]
   }
 
-  site_config {
-    application_stack {
-      python_version = "3.12"
-    }
-  }
+  site_config {}
 
   app_settings = {
     APPINSIGHTS_INSTRUMENTATIONKEY        = azurerm_application_insights.main.instrumentation_key
@@ -189,27 +202,32 @@ resource "azurerm_linux_function_app" "video_discovery" {
   tags = local.tags
 }
 
-resource "azurerm_linux_function_app" "video_ingestion" {
+resource "azurerm_linux_function_app_flex_consumption" "video_ingestion" {
   name                = local.video_ingestion_function_app_name
   resource_group_name = azurerm_resource_group.main.name
   location            = var.location
 
-  service_plan_id             = azurerm_service_plan.functions.id
-  storage_account_name        = azurerm_storage_account.main.name
-  storage_account_access_key  = azurerm_storage_account.main.primary_access_key
-  https_only                  = true
-  functions_extension_version = "~4"
+  service_plan_id = azurerm_service_plan.functions.id
+
+  storage_container_type            = "blobContainer"
+  storage_container_endpoint        = "${azurerm_storage_account.main.primary_blob_endpoint}${azurerm_storage_container.fn_fi_deploy.name}"
+  storage_authentication_type       = "UserAssignedIdentity"
+  storage_user_assigned_identity_id = azurerm_user_assigned_identity.main.id
+
+  runtime_name    = "python"
+  runtime_version = "3.12"
+
+  maximum_instance_count = 5
+  instance_memory_in_mb  = 2048
+
+  https_only = true
 
   identity {
     type         = "UserAssigned"
     identity_ids = [azurerm_user_assigned_identity.main.id]
   }
 
-  site_config {
-    application_stack {
-      python_version = "3.12"
-    }
-  }
+  site_config {}
 
   app_settings = {
     APPINSIGHTS_INSTRUMENTATIONKEY        = azurerm_application_insights.main.instrumentation_key
