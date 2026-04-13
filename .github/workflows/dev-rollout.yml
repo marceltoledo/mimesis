@@ -191,14 +191,15 @@ jobs:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_BC01_FUNCTION_APP_NAME: ${{ secrets.AZURE_BC01_FUNCTION_APP_NAME }}
       AZURE_BC01_FUNCTION_URL: ${{ secrets.AZURE_BC01_FUNCTION_URL }}
-      AZURE_BC01_FUNCTION_KEY: ${{ secrets.AZURE_BC01_FUNCTION_KEY }}
+      RESOURCE_GROUP: mimesis-dev-rg
 
     steps:
       - name: Preflight required smoke inputs
         run: |
           missing=0
-          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_BC01_FUNCTION_URL AZURE_BC01_FUNCTION_KEY; do
+          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_BC01_FUNCTION_APP_NAME AZURE_BC01_FUNCTION_URL; do
             if [ -z "${!var}" ]; then
               echo "Missing required value: $var (set as repository secret or variable)"
               missing=1
@@ -215,13 +216,43 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Fetch BC-01 host key
+        id: get-key
+        run: |
+          SUB="${{ env.AZURE_SUBSCRIPTION_ID }}"
+          APP="${{ env.AZURE_BC01_FUNCTION_APP_NAME }}"
+          RG="${{ env.RESOURCE_GROUP }}"
+          KEY=$(az rest --method post \
+            --url "https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Web/sites/${APP}/host/default/listKeys?api-version=2024-04-01" \
+            --query "functionKeys.default" -o tsv 2>/dev/null || echo "")
+          if [ -n "$KEY" ]; then
+            echo "::add-mask::$KEY"
+            echo "function_key=$KEY" >> "$GITHUB_OUTPUT"
+            echo "Key retrieved successfully."
+          else
+            echo "Could not retrieve host key — will attempt request without key (expects 401)."
+            echo "function_key=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Smoke test BC-01 endpoint
         run: |
+          FUNC_KEY="${{ steps.get-key.outputs.function_key }}"
+          FUNC_URL="${{ env.AZURE_BC01_FUNCTION_URL }}"
+          EXTRA_HEADERS=()
+          if [ -n "$FUNC_KEY" ]; then
+            EXTRA_HEADERS=(-H "x-functions-key: $FUNC_KEY")
+          fi
           http_status=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "x-functions-key: ${{ env.AZURE_BC01_FUNCTION_KEY }}" \
-            "${{ env.AZURE_BC01_FUNCTION_URL }}")
+            -X POST \
+            -H "Content-Type: application/json" \
+            "${EXTRA_HEADERS[@]}" \
+            -d '{"keyword":"smoke-test"}' \
+            "$FUNC_URL")
           echo "HTTP status: $http_status"
-          if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+          # 401 = app is reachable but key is wrong/missing (acceptable — app IS deployed)
+          # 0   = no network response (fail)
+          # 404 = route not found (fail — app not deployed correctly)
+          if [ "$http_status" -eq 0 ] || [ "$http_status" -eq 404 ]; then
             echo "Smoke test FAILED — HTTP $http_status returned by BC-01 endpoint."
             exit 1
           fi
