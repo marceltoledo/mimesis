@@ -129,11 +129,11 @@ jobs:
             .
 
       # BC-01: Video Discovery
-      # Packages src/mimesis/video_discovery/function_app.py with all deps.
+      # Packages functions/video-discovery/ (includes host.json) with all deps.
       - name: Package BC-01 (Video Discovery)
         run: |
           mkdir -p staging-bc01
-          cp src/mimesis/video_discovery/function_app.py staging-bc01/
+          cp -r functions/video-discovery/. staging-bc01/
           cp -r .python_packages staging-bc01/
           cd staging-bc01
           zip -r ../deploy-bc01.zip . \
@@ -148,11 +148,11 @@ jobs:
             --src deploy-bc01.zip
 
       # BC-02: Video Ingestion
-      # Packages src/mimesis/video_ingestion/function_app.py with all deps.
+      # Packages functions/video-ingestion/ (includes host.json) with all deps.
       - name: Package BC-02 (Video Ingestion)
         run: |
           mkdir -p staging-bc02
-          cp src/mimesis/video_ingestion/function_app.py staging-bc02/
+          cp -r functions/video-ingestion/. staging-bc02/
           cp -r .python_packages staging-bc02/
           cd staging-bc02
           zip -r ../deploy-bc02.zip . \
