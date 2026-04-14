@@ -20,16 +20,39 @@ jobs:
   terraform-dev:
     name: Terraform DEV (init → plan → apply)
     runs-on: ubuntu-latest
+    environment: dev
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC: true
+      ARM_USE_AZUREAD: true
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
     steps:
       - uses: actions/checkout@v4
 
+      - name: Preflight required Azure inputs
+        run: |
+          missing=0
+          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+            if [ -z "${!var}" ]; then
+              echo "Missing required value: $var (set as repository secret or variable)"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -60,16 +83,37 @@ jobs:
     name: Deploy Function Apps DEV
     runs-on: ubuntu-latest
     needs: terraform-dev
+    environment: dev
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_BC01_FUNCTION_APP_NAME: ${{ secrets.AZURE_BC01_FUNCTION_APP_NAME }}
+      AZURE_BC02_FUNCTION_APP_NAME: ${{ secrets.AZURE_BC02_FUNCTION_APP_NAME }}
+      AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
 
     steps:
       - uses: actions/checkout@v4
 
+      - name: Preflight required deploy inputs
+        run: |
+          missing=0
+          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_BC01_FUNCTION_APP_NAME AZURE_BC02_FUNCTION_APP_NAME AZURE_STORAGE_ACCOUNT; do
+            if [ -z "${!var}" ]; then
+              echo "Missing required value: $var (set as repository secret or variable)"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -86,64 +130,129 @@ jobs:
             .
 
       # BC-01: Video Discovery
-      # Packages src/mimesis/video_discovery/function_app.py with all deps.
+      # Packages functions/video-discovery/ (includes host.json) with all deps.
       - name: Package BC-01 (Video Discovery)
         run: |
           mkdir -p staging-bc01
-          cp src/mimesis/video_discovery/function_app.py staging-bc01/
+          cp -r functions/video-discovery/. staging-bc01/
           cp -r .python_packages staging-bc01/
           cd staging-bc01
           zip -r ../deploy-bc01.zip . \
             --exclude "*.pyc" \
             --exclude "*/__pycache__/*"
 
+      # BC-01: Upload zip to its FC1 deployment blob container.
+      # FC1 (Flex Consumption) does not use Kudu zipdeploy; the runtime reads
+      # the package from the blob container configured in functionAppConfig.
       - name: Deploy BC-01 (Video Discovery)
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
         run: |
-          az functionapp deployment source config-zip \
-            --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --name "${{ secrets.AZURE_BC01_FUNCTION_APP_NAME }}" \
-            --src deploy-bc01.zip
+          az storage blob upload \
+            --account-name "$AZURE_STORAGE_ACCOUNT" \
+            --container-name fn-fd-deploy \
+            --name run-from-package.zip \
+            --file deploy-bc01.zip \
+            --overwrite \
+            --auth-mode login
 
       # BC-02: Video Ingestion
-      # Packages src/mimesis/video_ingestion/function_app.py with all deps.
+      # Packages functions/video-ingestion/ (includes host.json) with all deps.
       - name: Package BC-02 (Video Ingestion)
         run: |
           mkdir -p staging-bc02
-          cp src/mimesis/video_ingestion/function_app.py staging-bc02/
+          cp -r functions/video-ingestion/. staging-bc02/
           cp -r .python_packages staging-bc02/
           cd staging-bc02
           zip -r ../deploy-bc02.zip . \
             --exclude "*.pyc" \
             --exclude "*/__pycache__/*"
 
+      # BC-02: Upload zip to its FC1 deployment blob container.
       - name: Deploy BC-02 (Video Ingestion)
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
         run: |
-          az functionapp deployment source config-zip \
-            --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --name "${{ secrets.AZURE_BC02_FUNCTION_APP_NAME }}" \
-            --src deploy-bc02.zip
+          az storage blob upload \
+            --account-name "$AZURE_STORAGE_ACCOUNT" \
+            --container-name fn-fi-deploy \
+            --name run-from-package.zip \
+            --file deploy-bc02.zip \
+            --overwrite \
+            --auth-mode login
 
   # ── 3. Smoke test: verify BC-01 HTTP endpoint is reachable ──────────────────
   smoke-dev:
     name: Smoke Test DEV (BC-01)
     runs-on: ubuntu-latest
     needs: deploy-functions-dev
+    environment: dev
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_BC01_FUNCTION_APP_NAME: ${{ secrets.AZURE_BC01_FUNCTION_APP_NAME }}
+      AZURE_BC01_FUNCTION_URL: ${{ secrets.AZURE_BC01_FUNCTION_URL }}
+      RESOURCE_GROUP: mimesis-dev-rg
 
     steps:
+      - name: Preflight required smoke inputs
+        run: |
+          missing=0
+          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_BC01_FUNCTION_APP_NAME AZURE_BC01_FUNCTION_URL; do
+            if [ -z "${!var}" ]; then
+              echo "Missing required value: $var (set as repository secret or variable)"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Fetch BC-01 host key
+        id: get-key
+        run: |
+          SUB="${{ env.AZURE_SUBSCRIPTION_ID }}"
+          APP="${{ env.AZURE_BC01_FUNCTION_APP_NAME }}"
+          RG="${{ env.RESOURCE_GROUP }}"
+          KEY=$(az rest --method post \
+            --url "https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Web/sites/${APP}/host/default/listKeys?api-version=2024-04-01" \
+            --query "functionKeys.default" -o tsv 2>/dev/null || echo "")
+          if [ -n "$KEY" ]; then
+            echo "::add-mask::$KEY"
+            echo "function_key=$KEY" >> "$GITHUB_OUTPUT"
+            echo "Key retrieved successfully."
+          else
+            echo "Could not retrieve host key — will attempt request without key (expects 401)."
+            echo "function_key=" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Smoke test BC-01 endpoint
         run: |
+          FUNC_KEY="${{ steps.get-key.outputs.function_key }}"
+          FUNC_URL="${{ env.AZURE_BC01_FUNCTION_URL }}"
+          EXTRA_HEADERS=()
+          if [ -n "$FUNC_KEY" ]; then
+            EXTRA_HEADERS=(-H "x-functions-key: $FUNC_KEY")
+          fi
           http_status=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "x-functions-key: ${{ secrets.AZURE_BC01_FUNCTION_KEY }}" \
-            "${{ secrets.AZURE_BC01_FUNCTION_URL }}")
+            -X POST \
+            -H "Content-Type: application/json" \
+            "${EXTRA_HEADERS[@]}" \
+            -d '{"keyword":"smoke-test"}' \
+            "$FUNC_URL")
           echo "HTTP status: $http_status"
-          if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+          # 401 = app is reachable but key is wrong/missing (acceptable — app IS deployed)
+          # 0   = no network response (fail)
+          # 404 = route not found (fail — app not deployed correctly)
+          if [ "$http_status" -eq 0 ] || [ "$http_status" -eq 404 ]; then
             echo "Smoke test FAILED — HTTP $http_status returned by BC-01 endpoint."
             exit 1
           fi

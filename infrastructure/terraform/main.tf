@@ -70,21 +70,29 @@ resource "azurerm_storage_table" "ingestion_ledger" {
 }
 
 resource "azurerm_storage_container" "raw_videos" {
-  name                  = "raw-videos"
-  storage_account_name  = azurerm_storage_account.main.name
-  container_access_type = "private"
+  name               = "raw-videos"
+  storage_account_id = azurerm_storage_account.main.id
 }
 
 resource "azurerm_storage_container" "extracted_audio" {
-  name                  = "extracted-audio"
-  storage_account_name  = azurerm_storage_account.main.name
-  container_access_type = "private"
+  name               = "extracted-audio"
+  storage_account_id = azurerm_storage_account.main.id
 }
 
 resource "azurerm_storage_container" "video_metadata" {
-  name                  = "video-metadata"
-  storage_account_name  = azurerm_storage_account.main.name
-  container_access_type = "private"
+  name               = "video-metadata"
+  storage_account_id = azurerm_storage_account.main.id
+}
+
+# Deployment artifact containers for FC1 Flex Consumption function apps.
+resource "azurerm_storage_container" "fn_fd_deploy" {
+  name               = "fn-fd-deploy"
+  storage_account_id = azurerm_storage_account.main.id
+}
+
+resource "azurerm_storage_container" "fn_fi_deploy" {
+  name               = "fn-fi-deploy"
+  storage_account_id = azurerm_storage_account.main.id
 }
 
 resource "azurerm_storage_management_policy" "main" {
@@ -151,77 +159,116 @@ resource "azurerm_service_plan" "functions" {
   tags                = local.tags
 }
 
-resource "azurerm_linux_function_app" "video_discovery" {
-  name                = local.video_discovery_function_app_name
-  resource_group_name = azurerm_resource_group.main.name
-  location            = var.location
-
-  service_plan_id             = azurerm_service_plan.functions.id
-  storage_account_name        = azurerm_storage_account.main.name
-  storage_account_access_key  = azurerm_storage_account.main.primary_access_key
-  https_only                  = true
-  functions_extension_version = "~4"
+resource "azapi_resource" "video_discovery" {
+  type      = "Microsoft.Web/sites@2024-04-01"
+  name      = local.video_discovery_function_app_name
+  location  = var.location
+  parent_id = azurerm_resource_group.main.id
 
   identity {
     type         = "UserAssigned"
     identity_ids = [azurerm_user_assigned_identity.main.id]
   }
 
-  site_config {
-    application_stack {
-      python_version = "3.12"
+  body = {
+    kind = "functionapp,linux"
+    properties = {
+      serverFarmId = azurerm_service_plan.functions.id
+      httpsOnly    = true
+      functionAppConfig = {
+        deployment = {
+          storage = {
+            type  = "blobContainer"
+            value = "${azurerm_storage_account.main.primary_blob_endpoint}${azurerm_storage_container.fn_fd_deploy.name}"
+            authentication = {
+              type                           = "UserAssignedIdentity"
+              userAssignedIdentityResourceId = azurerm_user_assigned_identity.main.id
+            }
+          }
+        }
+        scaleAndConcurrency = {
+          instanceMemoryMB     = 2048
+          maximumInstanceCount = 5
+        }
+        runtime = {
+          name    = "python"
+          version = "3.12"
+        }
+      }
+      siteConfig = {
+        appSettings = [
+          { name = "APPINSIGHTS_INSTRUMENTATIONKEY", value = azurerm_application_insights.main.instrumentation_key },
+          { name = "APPLICATIONINSIGHTS_CONNECTION_STRING", value = azurerm_application_insights.main.connection_string },
+          { name = "AzureWebJobsStorage__accountName", value = azurerm_storage_account.main.name },
+          { name = "AzureWebJobsStorage__credential", value = "managedidentity" },
+          { name = "AzureWebJobsStorage__clientId", value = azurerm_user_assigned_identity.main.client_id },
+          { name = "MIMESIS_KEY_VAULT_URL", value = azurerm_key_vault.main.vault_uri },
+          { name = "MIMESIS_STORAGE_ACCOUNT_URL", value = azurerm_storage_account.main.primary_table_endpoint },
+          { name = "MIMESIS_DISCOVERY_LEDGER_TABLE", value = azurerm_storage_table.discovery_ledger.name },
+          { name = "MIMESIS_SERVICE_BUS_NAMESPACE", value = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net" },
+          { name = "MIMESIS_SERVICE_BUS_QUEUE", value = azurerm_servicebus_queue.video_discovered.name },
+          { name = "MIMESIS_DEFAULT_MAX_RESULTS", value = "15" },
+          { name = "MIMESIS_APP_INSIGHTS_CONNECTION_STRING", value = azurerm_application_insights.main.connection_string },
+        ]
+      }
     }
-  }
-
-  app_settings = {
-    APPINSIGHTS_INSTRUMENTATIONKEY        = azurerm_application_insights.main.instrumentation_key
-    APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.main.connection_string
-
-    MIMESIS_KEY_VAULT_URL                  = azurerm_key_vault.main.vault_uri
-    MIMESIS_STORAGE_ACCOUNT_URL            = azurerm_storage_account.main.primary_table_endpoint
-    MIMESIS_DISCOVERY_LEDGER_TABLE         = azurerm_storage_table.discovery_ledger.name
-    MIMESIS_SERVICE_BUS_NAMESPACE          = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net"
-    MIMESIS_SERVICE_BUS_QUEUE              = azurerm_servicebus_queue.video_discovered.name
-    MIMESIS_DEFAULT_MAX_RESULTS            = "15"
-    MIMESIS_APP_INSIGHTS_CONNECTION_STRING = azurerm_application_insights.main.connection_string
   }
 
   tags = local.tags
 }
 
-resource "azurerm_linux_function_app" "video_ingestion" {
-  name                = local.video_ingestion_function_app_name
-  resource_group_name = azurerm_resource_group.main.name
-  location            = var.location
-
-  service_plan_id             = azurerm_service_plan.functions.id
-  storage_account_name        = azurerm_storage_account.main.name
-  storage_account_access_key  = azurerm_storage_account.main.primary_access_key
-  https_only                  = true
-  functions_extension_version = "~4"
+resource "azapi_resource" "video_ingestion" {
+  type      = "Microsoft.Web/sites@2024-04-01"
+  name      = local.video_ingestion_function_app_name
+  location  = var.location
+  parent_id = azurerm_resource_group.main.id
 
   identity {
     type         = "UserAssigned"
     identity_ids = [azurerm_user_assigned_identity.main.id]
   }
 
-  site_config {
-    application_stack {
-      python_version = "3.12"
+  body = {
+    kind = "functionapp,linux"
+    properties = {
+      serverFarmId = azurerm_service_plan.functions.id
+      httpsOnly    = true
+      functionAppConfig = {
+        deployment = {
+          storage = {
+            type  = "blobContainer"
+            value = "${azurerm_storage_account.main.primary_blob_endpoint}${azurerm_storage_container.fn_fi_deploy.name}"
+            authentication = {
+              type                           = "UserAssignedIdentity"
+              userAssignedIdentityResourceId = azurerm_user_assigned_identity.main.id
+            }
+          }
+        }
+        scaleAndConcurrency = {
+          instanceMemoryMB     = 2048
+          maximumInstanceCount = 5
+        }
+        runtime = {
+          name    = "python"
+          version = "3.12"
+        }
+      }
+      siteConfig = {
+        appSettings = [
+          { name = "APPINSIGHTS_INSTRUMENTATIONKEY", value = azurerm_application_insights.main.instrumentation_key },
+          { name = "APPLICATIONINSIGHTS_CONNECTION_STRING", value = azurerm_application_insights.main.connection_string },
+          { name = "AzureWebJobsStorage__accountName", value = azurerm_storage_account.main.name },
+          { name = "AzureWebJobsStorage__credential", value = "managedidentity" },
+          { name = "AzureWebJobsStorage__clientId", value = azurerm_user_assigned_identity.main.client_id },
+          { name = "MIMESIS_STORAGE_ACCOUNT_URL", value = azurerm_storage_account.main.primary_table_endpoint },
+          { name = "MIMESIS_INGESTION_LEDGER_TABLE", value = azurerm_storage_table.ingestion_ledger.name },
+          { name = "MIMESIS_SERVICE_BUS_NAMESPACE", value = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net" },
+          { name = "MIMESIS_SERVICE_BUS_INGESTED_QUEUE", value = azurerm_servicebus_queue.video_ingested.name },
+          { name = "MIMESIS_APP_INSIGHTS_CONNECTION_STRING", value = azurerm_application_insights.main.connection_string },
+          { name = "MIMESIS_SERVICE_BUS__fullyQualifiedNamespace", value = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net" },
+        ]
+      }
     }
-  }
-
-  app_settings = {
-    APPINSIGHTS_INSTRUMENTATIONKEY        = azurerm_application_insights.main.instrumentation_key
-    APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.main.connection_string
-
-    MIMESIS_STORAGE_ACCOUNT_URL            = azurerm_storage_account.main.primary_table_endpoint
-    MIMESIS_INGESTION_LEDGER_TABLE         = azurerm_storage_table.ingestion_ledger.name
-    MIMESIS_SERVICE_BUS_NAMESPACE          = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net"
-    MIMESIS_SERVICE_BUS_INGESTED_QUEUE     = azurerm_servicebus_queue.video_ingested.name
-    MIMESIS_APP_INSIGHTS_CONNECTION_STRING = azurerm_application_insights.main.connection_string
-
-    MIMESIS_SERVICE_BUS__fullyQualifiedNamespace = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net"
   }
 
   tags = local.tags
@@ -246,7 +293,7 @@ resource "azurerm_monitor_diagnostic_setting" "service_bus_logs" {
 resource "azurerm_monitor_metric_alert" "dlq_count_warning" {
   name                = "${local.prefix}-dlq-count-warning"
   resource_group_name = azurerm_resource_group.main.name
-  scopes              = [azurerm_servicebus_queue.video_discovered.id]
+  scopes              = [azurerm_servicebus_namespace.main.id]
   description         = "Warning when DLQ count is >= 1 for 10 minutes."
 
   severity    = 2
@@ -254,7 +301,7 @@ resource "azurerm_monitor_metric_alert" "dlq_count_warning" {
   window_size = "PT15M"
 
   criteria {
-    metric_namespace = "Microsoft.ServiceBus/namespaces/queues"
+    metric_namespace = "Microsoft.ServiceBus/namespaces"
     metric_name      = "DeadletteredMessages"
     aggregation      = "Average"
     operator         = "GreaterThanOrEqual"
@@ -267,7 +314,7 @@ resource "azurerm_monitor_metric_alert" "dlq_count_warning" {
 resource "azurerm_monitor_metric_alert" "dlq_count_critical" {
   name                = "${local.prefix}-dlq-count-critical"
   resource_group_name = azurerm_resource_group.main.name
-  scopes              = [azurerm_servicebus_queue.video_discovered.id]
+  scopes              = [azurerm_servicebus_namespace.main.id]
   description         = "Critical when DLQ count is >= 5 for 10 minutes."
 
   severity    = 0
@@ -275,7 +322,7 @@ resource "azurerm_monitor_metric_alert" "dlq_count_critical" {
   window_size = "PT15M"
 
   criteria {
-    metric_namespace = "Microsoft.ServiceBus/namespaces/queues"
+    metric_namespace = "Microsoft.ServiceBus/namespaces"
     metric_name      = "DeadletteredMessages"
     aggregation      = "Average"
     operator         = "GreaterThanOrEqual"
