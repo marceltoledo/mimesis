@@ -197,17 +197,17 @@ resource "azapi_resource" "video_discovery" {
       }
       siteConfig = {
         appSettings = [
-          { name = "APPINSIGHTS_INSTRUMENTATIONKEY",        value = azurerm_application_insights.main.instrumentation_key },
+          { name = "APPINSIGHTS_INSTRUMENTATIONKEY", value = azurerm_application_insights.main.instrumentation_key },
           { name = "APPLICATIONINSIGHTS_CONNECTION_STRING", value = azurerm_application_insights.main.connection_string },
-          { name = "AzureWebJobsStorage__accountName",      value = azurerm_storage_account.main.name },
-          { name = "AzureWebJobsStorage__credential",       value = "managedidentity" },
-          { name = "AzureWebJobsStorage__clientId",         value = azurerm_user_assigned_identity.main.client_id },
-          { name = "MIMESIS_KEY_VAULT_URL",                  value = azurerm_key_vault.main.vault_uri },
-          { name = "MIMESIS_STORAGE_ACCOUNT_URL",            value = azurerm_storage_account.main.primary_table_endpoint },
-          { name = "MIMESIS_DISCOVERY_LEDGER_TABLE",         value = azurerm_storage_table.discovery_ledger.name },
-          { name = "MIMESIS_SERVICE_BUS_NAMESPACE",          value = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net" },
-          { name = "MIMESIS_SERVICE_BUS_QUEUE",              value = azurerm_servicebus_queue.video_discovered.name },
-          { name = "MIMESIS_DEFAULT_MAX_RESULTS",            value = "15" },
+          { name = "AzureWebJobsStorage__accountName", value = azurerm_storage_account.main.name },
+          { name = "AzureWebJobsStorage__credential", value = "managedidentity" },
+          { name = "AzureWebJobsStorage__clientId", value = azurerm_user_assigned_identity.main.client_id },
+          { name = "MIMESIS_KEY_VAULT_URL", value = azurerm_key_vault.main.vault_uri },
+          { name = "MIMESIS_STORAGE_ACCOUNT_URL", value = azurerm_storage_account.main.primary_table_endpoint },
+          { name = "MIMESIS_DISCOVERY_LEDGER_TABLE", value = azurerm_storage_table.discovery_ledger.name },
+          { name = "MIMESIS_SERVICE_BUS_NAMESPACE", value = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net" },
+          { name = "MIMESIS_SERVICE_BUS_QUEUE", value = azurerm_servicebus_queue.video_discovered.name },
+          { name = "MIMESIS_DEFAULT_MAX_RESULTS", value = "15" },
           { name = "MIMESIS_APP_INSIGHTS_CONNECTION_STRING", value = azurerm_application_insights.main.connection_string },
         ]
       }
@@ -255,15 +255,15 @@ resource "azapi_resource" "video_ingestion" {
       }
       siteConfig = {
         appSettings = [
-          { name = "APPINSIGHTS_INSTRUMENTATIONKEY",        value = azurerm_application_insights.main.instrumentation_key },
+          { name = "APPINSIGHTS_INSTRUMENTATIONKEY", value = azurerm_application_insights.main.instrumentation_key },
           { name = "APPLICATIONINSIGHTS_CONNECTION_STRING", value = azurerm_application_insights.main.connection_string },
-          { name = "AzureWebJobsStorage__accountName",      value = azurerm_storage_account.main.name },
-          { name = "AzureWebJobsStorage__credential",       value = "managedidentity" },
-          { name = "AzureWebJobsStorage__clientId",         value = azurerm_user_assigned_identity.main.client_id },
-          { name = "MIMESIS_STORAGE_ACCOUNT_URL",            value = azurerm_storage_account.main.primary_table_endpoint },
-          { name = "MIMESIS_INGESTION_LEDGER_TABLE",         value = azurerm_storage_table.ingestion_ledger.name },
-          { name = "MIMESIS_SERVICE_BUS_NAMESPACE",          value = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net" },
-          { name = "MIMESIS_SERVICE_BUS_INGESTED_QUEUE",     value = azurerm_servicebus_queue.video_ingested.name },
+          { name = "AzureWebJobsStorage__accountName", value = azurerm_storage_account.main.name },
+          { name = "AzureWebJobsStorage__credential", value = "managedidentity" },
+          { name = "AzureWebJobsStorage__clientId", value = azurerm_user_assigned_identity.main.client_id },
+          { name = "MIMESIS_STORAGE_ACCOUNT_URL", value = azurerm_storage_account.main.primary_table_endpoint },
+          { name = "MIMESIS_INGESTION_LEDGER_TABLE", value = azurerm_storage_table.ingestion_ledger.name },
+          { name = "MIMESIS_SERVICE_BUS_NAMESPACE", value = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net" },
+          { name = "MIMESIS_SERVICE_BUS_INGESTED_QUEUE", value = azurerm_servicebus_queue.video_ingested.name },
           { name = "MIMESIS_APP_INSIGHTS_CONNECTION_STRING", value = azurerm_application_insights.main.connection_string },
           { name = "MIMESIS_SERVICE_BUS__fullyQualifiedNamespace", value = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net" },
         ]
