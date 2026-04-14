@@ -10,9 +10,9 @@ permissions:
   contents: read
 
 jobs:
-  # ── Smoke test: verify BC-01 HTTP endpoint is reachable ─────────────────────
+  # ── Smoke test: verify BC-01 HTTP endpoint and BC-02 function app ───────────
   smoke-dev:
-    name: Smoke Test DEV (BC-01)
+    name: Smoke Test DEV (BC-01 + BC-02)
     runs-on: ubuntu-latest
     environment: dev
     env:
@@ -21,12 +21,14 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       AZURE_BC01_FUNCTION_URL: ${{ secrets.AZURE_BC01_FUNCTION_URL }}
       AZURE_BC01_FUNCTION_KEY: ${{ secrets.AZURE_BC01_FUNCTION_KEY }}
+      AZURE_BC02_FUNCTION_APP_NAME: ${{ secrets.AZURE_BC02_FUNCTION_APP_NAME }}
+      RESOURCE_GROUP: mimesis-dev-rg
 
     steps:
       - name: Preflight required smoke inputs
         run: |
           missing=0
-          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_BC01_FUNCTION_URL AZURE_BC01_FUNCTION_KEY; do
+          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_BC01_FUNCTION_URL AZURE_BC01_FUNCTION_KEY AZURE_BC02_FUNCTION_APP_NAME; do
             if [ -z "${!var}" ]; then
               echo "Missing required value: $var (set as repository secret or variable)"
               missing=1
@@ -54,3 +56,18 @@ jobs:
             exit 1
           fi
           echo "Smoke test PASSED — HTTP $http_status"
+
+      - name: Smoke test BC-02 function app (health)
+        run: |
+          APP="${{ env.AZURE_BC02_FUNCTION_APP_NAME }}"
+          RG="${{ env.RESOURCE_GROUP }}"
+          state=$(az functionapp show \
+            --name "$APP" \
+            --resource-group "$RG" \
+            --query "state" -o tsv 2>/dev/null || echo "")
+          echo "BC-02 function app state: ${state:-<unknown>}"
+          if [ "${state}" != "Running" ]; then
+            echo "Smoke test FAILED — BC-02 function app is not in Running state (state=${state:-<unknown>})."
+            exit 1
+          fi
+          echo "Smoke test PASSED — BC-02 function app is Running."
