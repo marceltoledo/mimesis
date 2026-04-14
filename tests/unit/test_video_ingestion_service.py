@@ -125,14 +125,14 @@ class TestIngestionService:
         assert result.skipped_as_duplicate is False
         assert len(publisher.published) == 1
 
-        paths = canonical_paths("vid123")
+        paths = canonical_paths("vid123", datetime(2026, 1, 1, tzinfo=UTC))
         assert paths.video_path in store.uploaded
         assert paths.audio_path in store.uploaded
         assert paths.metadata_path in store.uploaded
 
     def test_skips_duplicate_when_completed_and_artifacts_exist(self) -> None:
         store = FakeArtifactStore()
-        paths = canonical_paths("vid123")
+        paths = canonical_paths("vid123", datetime(2026, 1, 1, tzinfo=UTC))
         store.uploaded[paths.video_path] = b"v"
         store.uploaded[paths.audio_path] = b"a"
         store.uploaded[paths.metadata_path] = b"m"
@@ -158,7 +158,7 @@ class TestIngestionService:
 
     def test_reprocesses_when_ledger_completed_but_artifact_missing(self) -> None:
         store = FakeArtifactStore()
-        paths = canonical_paths("vid123")
+        paths = canonical_paths("vid123", datetime(2026, 1, 1, tzinfo=UTC))
         store.uploaded[paths.video_path] = b"v"
         store.uploaded[paths.audio_path] = b"a"
 
