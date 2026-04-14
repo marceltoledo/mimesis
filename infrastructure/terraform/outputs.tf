@@ -63,3 +63,23 @@ output "app_insights_connection_string" {
   value       = azurerm_application_insights.main.connection_string
   sensitive   = true
 }
+
+output "video_discovery_function_app_name" {
+  description = "Name of the BC-01 (Video Discovery) Function App."
+  value       = azapi_resource.video_discovery.name
+}
+
+output "video_ingestion_function_app_name" {
+  description = "Name of the BC-02 (Video Ingestion) Function App."
+  value       = azapi_resource.video_ingestion.name
+}
+
+output "video_discovery_function_url" {
+  description = "Default HTTPS endpoint for BC-01 (Video Discovery) Function App."
+  value       = "https://${azapi_resource.video_discovery.name}.azurewebsites.net"
+}
+
+output "video_ingestion_function_url" {
+  description = "Default HTTPS endpoint for BC-02 (Video Ingestion) Function App."
+  value       = "https://${azapi_resource.video_ingestion.name}.azurewebsites.net"
+}
