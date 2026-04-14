@@ -41,7 +41,7 @@ class VideoIngestionService:
         self._event_publisher = event_publisher
 
     def ingest_discovered_video(self, payload: VideoDiscoveredPayload) -> IngestionResult:
-        paths = canonical_paths(payload.video_id)
+        paths = canonical_paths(payload.video_id, payload.occurred_at)
         record = self._ledger.get(payload.video_id)
 
         if (

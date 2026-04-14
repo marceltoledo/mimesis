@@ -57,12 +57,17 @@ class IngestionResult:
     skipped_as_duplicate: bool
 
 
-def canonical_paths(video_id: str) -> ArtifactPaths:
-    """Build deterministic artifact paths for a video."""
+def canonical_paths(video_id: str, occurred_at: datetime) -> ArtifactPaths:
+    """Build deterministic, date-partitioned artifact paths for a video.
+
+    The date segment is derived from ``occurred_at`` (the discovery event timestamp),
+    making paths stable across retries of the same Service Bus message.
+    """
+    date_str = occurred_at.strftime("%Y/%m/%d")
     return ArtifactPaths(
-        video_path=f"raw-videos/{video_id}/source.mp4",
-        audio_path=f"extracted-audio/{video_id}/audio.mp3",
-        metadata_path=f"video-metadata/{video_id}/metadata.json",
+        video_path=f"raw-videos/{date_str}/{video_id}/source.mp4",
+        audio_path=f"extracted-audio/{date_str}/{video_id}/audio.mp3",
+        metadata_path=f"video-metadata/{date_str}/{video_id}/metadata.json",
     )
 
 

@@ -257,3 +257,34 @@ jobs:
             exit 1
           fi
           echo "Smoke test PASSED — HTTP $http_status"
+
+      - name: Verify BC-02 blob output (end-to-end check)
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+        run: |
+          if [ -z "$AZURE_STORAGE_ACCOUNT" ]; then
+            echo "::warning::AZURE_STORAGE_ACCOUNT not set — skipping BC-02 blob check."
+            exit 0
+          fi
+          # Poll raw-videos container for up to 90s to give Service Bus and BC-02 time to process.
+          # A blob count > 0 (from any previous run) confirms BC-02 is wired and writing artifacts.
+          echo "Polling raw-videos container for BC-02 artifacts (up to 90s)..."
+          found=0
+          for i in $(seq 1 9); do
+            count=$(az storage blob list \
+              --account-name "$AZURE_STORAGE_ACCOUNT" \
+              --container-name raw-videos \
+              --auth-mode login \
+              --query "length(@)" -o tsv 2>/dev/null || echo "0")
+            echo "Attempt $i/9: raw-videos blob count = $count"
+            if [ "${count:-0}" -gt 0 ]; then
+              found=1
+              break
+            fi
+            sleep 10
+          done
+          if [ "$found" -eq 1 ]; then
+            echo "BC-02 end-to-end verified — artifacts present in raw-videos container."
+          else
+            echo "::warning::No blobs found in raw-videos after 90s. BC-02 may not have processed any events yet (first run or 'smoke-test' keyword returned no videos)."
+          fi

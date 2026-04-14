@@ -332,6 +332,48 @@ resource "azurerm_monitor_metric_alert" "dlq_count_critical" {
   tags = local.tags
 }
 
+resource "azurerm_monitor_metric_alert" "dlq_age_warning" {
+  name                = "${local.prefix}-dlq-age-warning"
+  resource_group_name = azurerm_resource_group.main.name
+  scopes              = [azurerm_servicebus_namespace.main.id]
+  description         = "Warning when DLQ messages have been present continuously for 15 minutes (oldest message age > 15m)."
+
+  severity    = 2
+  frequency   = "PT5M"
+  window_size = "PT15M"
+
+  criteria {
+    metric_namespace = "Microsoft.ServiceBus/namespaces"
+    metric_name      = "DeadletteredMessages"
+    aggregation      = "Minimum"
+    operator         = "GreaterThan"
+    threshold        = 0
+  }
+
+  tags = local.tags
+}
+
+resource "azurerm_monitor_metric_alert" "dlq_age_critical" {
+  name                = "${local.prefix}-dlq-age-critical"
+  resource_group_name = azurerm_resource_group.main.name
+  scopes              = [azurerm_servicebus_namespace.main.id]
+  description         = "Critical when DLQ messages have been present continuously for 60 minutes (oldest message age > 60m)."
+
+  severity    = 0
+  frequency   = "PT5M"
+  window_size = "PT1H"
+
+  criteria {
+    metric_namespace = "Microsoft.ServiceBus/namespaces"
+    metric_name      = "DeadletteredMessages"
+    aggregation      = "Minimum"
+    operator         = "GreaterThan"
+    threshold        = 0
+  }
+
+  tags = local.tags
+}
+
 resource "azurerm_monitor_scheduled_query_rules_alert_v2" "function_failure_warning" {
   name                = "${local.prefix}-fn-failure-warning"
   resource_group_name = azurerm_resource_group.main.name
