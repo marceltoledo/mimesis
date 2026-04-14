@@ -9,10 +9,6 @@ permissions:
   id-token: write
   contents: read
 
-env:
-  # No workflow-level env — all credentials are DEV environment secrets
-  # resolved per-job via environment: dev below.
-
 jobs:
   # ── Smoke test: verify BC-01 HTTP endpoint is reachable ─────────────────────
   smoke-dev:
