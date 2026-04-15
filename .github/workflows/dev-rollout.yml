@@ -142,17 +142,21 @@ jobs:
 
       # BC-01: Deploy via Kudu zipdeploy (the only method Flex Consumption
       # recognises for updating the active deployment).
-      # Raw blob upload to the container is NOT sufficient — Kudu tracks the
-      # active deployment in kudu-state.json and serves from released-package.zip.
+      # The Flex Consumption SCM endpoint cold-starts and may return 502 on
+      # the first request — retry up to 5 times with 30 s back-off.
       - name: Deploy BC-01 (Video Discovery)
         run: |
-          az functionapp deploy \
-            --name "${{ env.AZURE_BC01_FUNCTION_APP_NAME }}" \
-            --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --src-path deploy-bc01.zip \
-            --type zip \
-            --clean true \
-            --restart true
+          for attempt in 1 2 3 4 5; do
+            echo "Deploy attempt $attempt/5…"
+            az functionapp deploy \
+              --name "${{ env.AZURE_BC01_FUNCTION_APP_NAME }}" \
+              --resource-group "${{ env.RESOURCE_GROUP }}" \
+              --src-path deploy-bc01.zip \
+              --type zip \
+              --clean true \
+              --restart true && break
+            [ "$attempt" -lt 5 ] && echo "Retrying in 30 s…" && sleep 30 || exit 1
+          done
 
       # BC-02: Video Ingestion
       # Packages functions/video-ingestion/ (includes host.json) with all deps.
@@ -166,16 +170,20 @@ jobs:
             --exclude "*.pyc" \
             --exclude "*/__pycache__/*"
 
-      # BC-02: Deploy via Kudu zipdeploy.
+      # BC-02: Deploy via Kudu zipdeploy (with retry for cold-start 502).
       - name: Deploy BC-02 (Video Ingestion)
         run: |
-          az functionapp deploy \
-            --name "${{ env.AZURE_BC02_FUNCTION_APP_NAME }}" \
-            --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --src-path deploy-bc02.zip \
-            --type zip \
-            --clean true \
-            --restart true
+          for attempt in 1 2 3 4 5; do
+            echo "Deploy attempt $attempt/5…"
+            az functionapp deploy \
+              --name "${{ env.AZURE_BC02_FUNCTION_APP_NAME }}" \
+              --resource-group "${{ env.RESOURCE_GROUP }}" \
+              --src-path deploy-bc02.zip \
+              --type zip \
+              --clean true \
+              --restart true && break
+            [ "$attempt" -lt 5 ] && echo "Retrying in 30 s…" && sleep 30 || exit 1
+          done
 
   # ── 3. Smoke test: verify BC-01 HTTP endpoint and BC-02 function app ────────
   smoke-dev:
