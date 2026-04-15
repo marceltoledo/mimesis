@@ -156,12 +156,17 @@ jobs:
             --overwrite \
             --auth-mode login
 
-      # Restart BC-01 so the Flex Consumption runtime picks up the new blob.
-      - name: Restart BC-01 (Video Discovery)
+      # Force Flex Consumption to re-download the deployment blob.
+      # A simple restart reuses the cached extraction; updating an app
+      # setting forces a full cold start that re-reads from blob storage.
+      - name: Force redeploy BC-01 (Video Discovery)
         run: |
-          az functionapp restart \
+          STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          az functionapp config appsettings set \
             --name "${{ env.AZURE_BC01_FUNCTION_APP_NAME }}" \
-            --resource-group "${{ env.RESOURCE_GROUP }}"
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --settings "DEPLOYMENT_STAMP=$STAMP" \
+            --output none
 
       # BC-02: Video Ingestion
       # Packages functions/video-ingestion/ (includes host.json) with all deps.
@@ -188,12 +193,15 @@ jobs:
             --overwrite \
             --auth-mode login
 
-      # Restart BC-02 so the Flex Consumption runtime picks up the new blob.
-      - name: Restart BC-02 (Video Ingestion)
+      # Force Flex Consumption to re-download the deployment blob.
+      - name: Force redeploy BC-02 (Video Ingestion)
         run: |
-          az functionapp restart \
+          STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          az functionapp config appsettings set \
             --name "${{ env.AZURE_BC02_FUNCTION_APP_NAME }}" \
-            --resource-group "${{ env.RESOURCE_GROUP }}"
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --settings "DEPLOYMENT_STAMP=$STAMP" \
+            --output none
 
   # ── 3. Smoke test: verify BC-01 HTTP endpoint and BC-02 function app ────────
   smoke-dev:

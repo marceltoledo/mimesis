@@ -104,6 +104,7 @@ class YouTubeApiClient(YouTubeApiPort):
     """
 
     def __init__(self, api_key: str) -> None:
+        logger.info("Running the updated version — urllib-based YouTubeApiClient (issues #25, #27)")
         self._api_key = api_key
 
     def search_page(
