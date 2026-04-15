@@ -89,7 +89,19 @@ def _yt_get(url: str) -> dict[str, Any]:
     except urllib.error.HTTPError as exc:
         body = exc.read().decode(errors="replace")
         if exc.code == 403:
-            raise QuotaExceededException(f"HTTP 403: {body}") from exc
+            # Parse the Google API error body to distinguish quota exhaustion
+            # from other 403 causes (IP restriction, key restriction, etc.).
+            reason: str = "unknown"
+            try:
+                error_json = json.loads(body)
+                errors = error_json.get("error", {}).get("errors", [])
+                reason = str(errors[0].get("reason", "unknown")) if errors else "unknown"
+            except (json.JSONDecodeError, IndexError, KeyError):
+                pass
+            logger.error("YouTube API 403 | reason=%s body=%s", reason, body)
+            if reason in {"quotaExceeded", "dailyLimitExceeded"}:
+                raise QuotaExceededException(f"HTTP 403 ({reason}): {body}") from exc
+            raise YouTubeApiError(f"HTTP 403 ({reason}): {body}") from exc
         raise YouTubeApiError(f"HTTP {exc.code}: {body}") from exc
     except urllib.error.URLError as exc:
         raise YouTubeApiError(f"URL error: {exc.reason}") from exc
@@ -104,7 +116,10 @@ class YouTubeApiClient(YouTubeApiPort):
     """
 
     def __init__(self, api_key: str) -> None:
-        logger.info("Running the updated version — urllib-based YouTubeApiClient (issues #25, #27)")
+        logger.info(
+            "Running the updated version — urllib-based YouTubeApiClient (issues #25, #27) | key=...%s",
+            api_key[-4:],
+        )
         self._api_key = api_key
 
     def search_page(

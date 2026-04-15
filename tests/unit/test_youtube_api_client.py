@@ -85,8 +85,11 @@ class TestYtGet:
         assert result == payload
 
     def test_raises_quota_exceeded_on_403(self) -> None:
+        _quota_body = json.dumps(
+            {"error": {"errors": [{"reason": "quotaExceeded"}]}}
+        )
         with (
-            patch("urllib.request.urlopen", side_effect=_make_http_error(403, "quota")),
+            patch("urllib.request.urlopen", side_effect=_make_http_error(403, _quota_body)),
             pytest.raises(QuotaExceededException, match="HTTP 403"),
         ):
             _yt_get("https://example.com")
@@ -208,7 +211,8 @@ class TestYouTubeApiClientSearchPage:
 
     def test_propagates_quota_exceeded_exception(self, mocker) -> None:
         client = YouTubeApiClient(api_key="key")
-        mocker.patch("urllib.request.urlopen", side_effect=_make_http_error(403, "quota exceeded"))
+        _quota_body = json.dumps({"error": {"errors": [{"reason": "quotaExceeded"}]}})
+        mocker.patch("urllib.request.urlopen", side_effect=_make_http_error(403, _quota_body))
         from mimesis.video_discovery.domain.models import SearchQuery
 
         with pytest.raises(QuotaExceededException):
