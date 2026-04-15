@@ -61,13 +61,31 @@ jobs:
         run: |
           APP="${{ env.AZURE_BC02_FUNCTION_APP_NAME }}"
           RG="${{ env.RESOURCE_GROUP }}"
-          state=$(az functionapp show \
-            --name "$APP" \
-            --resource-group "$RG" \
-            --query "state" -o tsv 2>/dev/null || echo "")
-          echo "BC-02 function app state: ${state:-<unknown>}"
+          SUB="${{ env.AZURE_SUBSCRIPTION_ID }}"
+          # Use az rest with the same API version (2024-04-01) that Terraform uses
+          # to provision FC1 Flex Consumption function apps. The generic
+          # `az functionapp show` uses an older CLI-managed API version that may
+          # not return the `state` field for FC1 apps.
+          # Retry up to 5 times (30s total) to handle brief transitional states.
+          state=""
+          for attempt in $(seq 1 5); do
+            raw=$(az rest \
+              --method GET \
+              --url "https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Web/sites/${APP}?api-version=2024-04-01" \
+              2>&1) && rc=0 || rc=$?
+            if [ $rc -ne 0 ]; then
+              echo "Attempt $attempt/5: az rest failed (exit $rc): $raw"
+            else
+              state=$(echo "$raw" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('properties',{}).get('state',''))" 2>/dev/null || echo "")
+              echo "Attempt $attempt/5: BC-02 function app state: ${state:-<unknown>}"
+              if [ "${state}" = "Running" ]; then
+                break
+              fi
+            fi
+            [ $attempt -lt 5 ] && sleep 10
+          done
           if [ "${state}" != "Running" ]; then
-            echo "Smoke test FAILED — BC-02 function app is not in Running state (state=${state:-<unknown>})."
+            echo "Smoke test FAILED — BC-02 function app is not in Running state after retries (state=${state:-<unknown>})."
             exit 1
           fi
           echo "Smoke test PASSED — BC-02 function app is Running."
