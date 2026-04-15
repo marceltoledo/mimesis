@@ -85,9 +85,7 @@ class TestYtGet:
         assert result == payload
 
     def test_raises_quota_exceeded_on_403(self) -> None:
-        _quota_body = json.dumps(
-            {"error": {"errors": [{"reason": "quotaExceeded"}]}}
-        )
+        _quota_body = json.dumps({"error": {"errors": [{"reason": "quotaExceeded"}]}})
         with (
             patch("urllib.request.urlopen", side_effect=_make_http_error(403, _quota_body)),
             pytest.raises(QuotaExceededException, match="HTTP 403"),
