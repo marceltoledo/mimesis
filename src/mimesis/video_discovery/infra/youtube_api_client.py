@@ -12,6 +12,7 @@ import logging
 from datetime import datetime
 from typing import Any, cast
 
+import httplib2
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -73,11 +74,15 @@ class YouTubeApiClient(YouTubeApiPort):
     """Calls YouTube Data API v3 search.list + videos.list per page."""
 
     def __init__(self, api_key: str) -> None:
+        # Pass an explicit http object to prevent google-api-python-client from
+        # calling google.auth.default() — which fails in Azure (no Google ADC).
+        # The developerKey is still appended to every request URL.
         self._service = build(
             _YT_API_SERVICE,
             _YT_API_VERSION,
             developerKey=api_key,
             cache_discovery=False,
+            http=httplib2.Http(),
         )
 
     def search_page(
