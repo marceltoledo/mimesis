@@ -14,7 +14,7 @@ infrastructure/terraform/secrets.auto.tfvars
 
 # Terraform — generated / local state (state is remote; backend.hcl is local config)
 infrastructure/terraform/.terraform/
-infrastructure/terraform/.terraform.lock.hcl
+# .terraform.lock.hcl must be committed so CI uses pinned provider versions
 infrastructure/terraform/terraform.tfstate
 infrastructure/terraform/terraform.tfstate.backup
 infrastructure/terraform/crash.log
