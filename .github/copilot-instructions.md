@@ -55,8 +55,12 @@ The following specialist agents are defined in `.github/agents/`. Invoke them fo
 |---|---|---|
 | `solution-architect.agent.md` | Solution Architect | Designing solutions, writing solution design documents, DDD analysis, domain modeling, bounded context design, system design from Epics/Features/Stories/Bugs |
 | `cicd.agent.md` | PR & CI Recovery | PR merge conflicts, failing GitHub Actions checks, CI failures, Terraform validate errors, lint/type/test failures in CI, authoring new workflow YAML, adding smoke test steps, adding deployment jobs, adding DLQ monitoring resources |
+| `coding.agent.md` | Coding | Implementing user stories or features in Python, adding a new bounded context, editing `src/` code, adding or fixing unit tests, applying cross-cutting shared-kernel changes (e.g. Build ID, observability), enforcing config/port-adapter patterns |
 
-**Boundary rule**: the Solution Architect defines *what* the pipeline must verify (acceptance criteria, rollout strategy, alert thresholds). The CI/CD agent defines and implements *how* (YAML steps, command sequences, retry logic, Terraform alert resources).
+**Boundary rules**:
+- The Solution Architect defines *what* the pipeline must verify (acceptance criteria, rollout strategy, alert thresholds). The CI/CD agent defines and implements *how* (YAML steps, command sequences, retry logic, Terraform alert resources).
+- The Solution Architect defines *what* to build and *why*. The Coding agent implements *how* in Python, enforcing the codebase's established config, observability, and port-adapter patterns.
+- The Coding agent does **not** touch GitHub Actions YAML, Terraform, or architecture decisions.
 
 ---
 
