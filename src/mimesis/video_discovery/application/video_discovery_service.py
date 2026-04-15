@@ -62,14 +62,15 @@ class VideoDiscoveryService:
 
         try:
             self._paginate_and_emit(job, query, max_results)
-        except QuotaExceededException:
+        except QuotaExceededException as exc:
             logger.error(
                 "YouTube quota exhausted — SearchJob failed | job_id=%s "
-                "new_discoveries=%d duplicates_skipped=%d pages_fetched=%d",
+                "new_discoveries=%d duplicates_skipped=%d pages_fetched=%d error=%s",
                 job.search_job_id,
                 job.new_discoveries,
                 job.duplicates_skipped,
                 job.pages_fetched,
+                exc,
             )
             job.mark_failed()
             return job

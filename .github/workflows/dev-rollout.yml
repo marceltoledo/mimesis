@@ -90,7 +90,6 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       AZURE_BC01_FUNCTION_APP_NAME: ${{ secrets.AZURE_BC01_FUNCTION_APP_NAME }}
       AZURE_BC02_FUNCTION_APP_NAME: ${{ secrets.AZURE_BC02_FUNCTION_APP_NAME }}
-      AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
 
     steps:
       - uses: actions/checkout@v4
@@ -98,7 +97,7 @@ jobs:
       - name: Preflight required deploy inputs
         run: |
           missing=0
-          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_BC01_FUNCTION_APP_NAME AZURE_BC02_FUNCTION_APP_NAME AZURE_STORAGE_ACCOUNT; do
+          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_BC01_FUNCTION_APP_NAME AZURE_BC02_FUNCTION_APP_NAME; do
             if [ -z "${!var}" ]; then
               echo "Missing required value: $var (set as repository secret or variable)"
               missing=1
@@ -141,20 +140,91 @@ jobs:
             --exclude "*.pyc" \
             --exclude "*/__pycache__/*"
 
-      # BC-01: Upload zip to its FC1 deployment blob container.
-      # FC1 (Flex Consumption) does not use Kudu zipdeploy; the runtime reads
-      # the package from the blob container configured in functionAppConfig.
+      # BC-01: Deploy by direct blob upload — bypasses the SCM/Kudu endpoint
+      # entirely (which returns 502 on Flex Consumption apps).
+      #
+      # How Flex Consumption resolves its deployment package at cold-start:
+      #   1. Reads kudu-state.json from the deployment blob container.
+      #   2. Looks up ActiveDeploymentId → ResultPackagePath.
+      #   3. If ResultPackagePath is null → falls back to released-package.zip
+      #      in the same container.
+      #
+      # Strategy: upload the pre-built zip as released-package.zip, then write
+      # a fresh kudu-state.json with a new UUID and ResultPackagePath: null.
+      # On the next cold-start the runtime finds no local artifact and loads
+      # from the blob automatically.
       - name: Deploy BC-01 (Video Discovery)
         env:
-          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          RG: ${{ env.RESOURCE_GROUP }}
+          APP: ${{ env.AZURE_BC01_FUNCTION_APP_NAME }}
+          SUB: ${{ env.AZURE_SUBSCRIPTION_ID }}
         run: |
+          # Derive storage account name from resource group (mimesis-dev-rg → mimesisdevsa)
+          STORAGE_ACCOUNT=$(echo "$RG" | sed 's/-rg$//' | tr -d '-')sa
+          CONTAINER="fn-fd-deploy"
+
+          echo "Storage account : $STORAGE_ACCOUNT"
+          echo "Deployment container: $CONTAINER"
+
+          # 1. Upload new package as released-package.zip
           az storage blob upload \
-            --account-name "$AZURE_STORAGE_ACCOUNT" \
-            --container-name fn-fd-deploy \
-            --name run-from-package.zip \
+            --account-name "$STORAGE_ACCOUNT" \
+            --container-name "$CONTAINER" \
+            --name released-package.zip \
             --file deploy-bc01.zip \
             --overwrite \
-            --auth-mode login
+            --auth-mode key
+
+          # 2. Generate fresh kudu-state.json with a new deployment ID
+          DEPLOY_ID=$(python3 -c "import uuid; print(str(uuid.uuid4()))")
+          NOW=$(python3 -c "from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f0Z'))")
+          python3 -c "
+          import json, sys
+          data = {
+              'ActiveDeploymentId': sys.argv[1],
+              'LatestDeploymentId': sys.argv[1],
+              'Deployments': {
+                  sys.argv[1]: {
+                      'Id': sys.argv[1],
+                      'StartTime': sys.argv[2],
+                      'LastModifiedTime': sys.argv[2],
+                      'LastSuccessEndTime': sys.argv[2],
+                      'EndTime': sys.argv[2],
+                      'CreatedBy': None,
+                      'Deployer': 'az_cli',
+                      'RemoteBuild': False,
+                      'SourcePackageUri': None,
+                      'SourcePackagePath': None,
+                      'ResultPackagePath': None,
+                      'Complete': True,
+                      'Status': 4,
+                      'StatusText': '',
+                      'UploadedPackageName': 'released-package.zip',
+                      'KuduRestartCount': 0,
+                      'LatestDeploymentStep': 'Kudu-SyncTriggerStep',
+                      'FDMEnabled': False,
+                      'FDMPingRecorded': False
+                  }
+              }
+          }
+          print(json.dumps(data))
+          " "$DEPLOY_ID" "$NOW" > /tmp/kudu-state-bc01.json
+
+          # 3. Upload new kudu-state.json
+          az storage blob upload \
+            --account-name "$STORAGE_ACCOUNT" \
+            --container-name "$CONTAINER" \
+            --name kudu-state.json \
+            --file /tmp/kudu-state-bc01.json \
+            --overwrite \
+            --auth-mode key
+
+          # 4. Restart (terminates existing workers; next cold-start uses new blob)
+          az functionapp restart --name "$APP" --resource-group "$RG"
+
+          # 5. Notify the platform of updated triggers
+          az rest --method post \
+            --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$APP/syncfunctiontriggers?api-version=2024-04-01"
 
       # BC-02: Video Ingestion
       # Packages functions/video-ingestion/ (includes host.json) with all deps.
@@ -168,18 +238,73 @@ jobs:
             --exclude "*.pyc" \
             --exclude "*/__pycache__/*"
 
-      # BC-02: Upload zip to its FC1 deployment blob container.
+      # BC-02: Deploy by direct blob upload (same strategy as BC-01 above).
       - name: Deploy BC-02 (Video Ingestion)
         env:
-          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          RG: ${{ env.RESOURCE_GROUP }}
+          APP: ${{ env.AZURE_BC02_FUNCTION_APP_NAME }}
+          SUB: ${{ env.AZURE_SUBSCRIPTION_ID }}
         run: |
+          STORAGE_ACCOUNT=$(echo "$RG" | sed 's/-rg$//' | tr -d '-')sa
+          CONTAINER="fn-fi-deploy"
+
+          echo "Storage account : $STORAGE_ACCOUNT"
+          echo "Deployment container: $CONTAINER"
+
           az storage blob upload \
-            --account-name "$AZURE_STORAGE_ACCOUNT" \
-            --container-name fn-fi-deploy \
-            --name run-from-package.zip \
+            --account-name "$STORAGE_ACCOUNT" \
+            --container-name "$CONTAINER" \
+            --name released-package.zip \
             --file deploy-bc02.zip \
             --overwrite \
-            --auth-mode login
+            --auth-mode key
+
+          DEPLOY_ID=$(python3 -c "import uuid; print(str(uuid.uuid4()))")
+          NOW=$(python3 -c "from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f0Z'))")
+          python3 -c "
+          import json, sys
+          data = {
+              'ActiveDeploymentId': sys.argv[1],
+              'LatestDeploymentId': sys.argv[1],
+              'Deployments': {
+                  sys.argv[1]: {
+                      'Id': sys.argv[1],
+                      'StartTime': sys.argv[2],
+                      'LastModifiedTime': sys.argv[2],
+                      'LastSuccessEndTime': sys.argv[2],
+                      'EndTime': sys.argv[2],
+                      'CreatedBy': None,
+                      'Deployer': 'az_cli',
+                      'RemoteBuild': False,
+                      'SourcePackageUri': None,
+                      'SourcePackagePath': None,
+                      'ResultPackagePath': None,
+                      'Complete': True,
+                      'Status': 4,
+                      'StatusText': '',
+                      'UploadedPackageName': 'released-package.zip',
+                      'KuduRestartCount': 0,
+                      'LatestDeploymentStep': 'Kudu-SyncTriggerStep',
+                      'FDMEnabled': False,
+                      'FDMPingRecorded': False
+                  }
+              }
+          }
+          print(json.dumps(data))
+          " "$DEPLOY_ID" "$NOW" > /tmp/kudu-state-bc02.json
+
+          az storage blob upload \
+            --account-name "$STORAGE_ACCOUNT" \
+            --container-name "$CONTAINER" \
+            --name kudu-state.json \
+            --file /tmp/kudu-state-bc02.json \
+            --overwrite \
+            --auth-mode key
+
+          az functionapp restart --name "$APP" --resource-group "$RG"
+
+          az rest --method post \
+            --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$APP/syncfunctiontriggers?api-version=2024-04-01"
 
   # ── 3. Smoke test: verify BC-01 HTTP endpoint and BC-02 function app ────────
   smoke-dev:
