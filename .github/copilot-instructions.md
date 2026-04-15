@@ -47,6 +47,19 @@ All agents and engineers MUST follow these conventions. They are finalised and n
 
 ---
 
+## Agent Delegation Rules
+
+The following specialist agents are defined in `.github/agents/`. Invoke them for the tasks below — do not attempt to do these tasks inline.
+
+| Agent file | Agent name | Invoke when |
+|---|---|---|
+| `solution-architect.agent.md` | Solution Architect | Designing solutions, writing solution design documents, DDD analysis, domain modeling, bounded context design, system design from Epics/Features/Stories/Bugs |
+| `cicd.agent.md` | PR & CI Recovery | PR merge conflicts, failing GitHub Actions checks, CI failures, Terraform validate errors, lint/type/test failures in CI, authoring new workflow YAML, adding smoke test steps, adding deployment jobs, adding DLQ monitoring resources |
+
+**Boundary rule**: the Solution Architect defines *what* the pipeline must verify (acceptance criteria, rollout strategy, alert thresholds). The CI/CD agent defines and implements *how* (YAML steps, command sequences, retry logic, Terraform alert resources).
+
+---
+
 ## Solution Design Standards
 
 - Every new feature or component must have a Solution Design document produced by the Solution Architect agent before any code is written.
