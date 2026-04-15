@@ -156,6 +156,13 @@ jobs:
             --overwrite \
             --auth-mode login
 
+      # Restart BC-01 so the Flex Consumption runtime picks up the new blob.
+      - name: Restart BC-01 (Video Discovery)
+        run: |
+          az functionapp restart \
+            --name "${{ env.AZURE_BC01_FUNCTION_APP_NAME }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}"
+
       # BC-02: Video Ingestion
       # Packages functions/video-ingestion/ (includes host.json) with all deps.
       - name: Package BC-02 (Video Ingestion)
@@ -180,6 +187,13 @@ jobs:
             --file deploy-bc02.zip \
             --overwrite \
             --auth-mode login
+
+      # Restart BC-02 so the Flex Consumption runtime picks up the new blob.
+      - name: Restart BC-02 (Video Ingestion)
+        run: |
+          az functionapp restart \
+            --name "${{ env.AZURE_BC02_FUNCTION_APP_NAME }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}"
 
   # ── 3. Smoke test: verify BC-01 HTTP endpoint and BC-02 function app ────────
   smoke-dev:
