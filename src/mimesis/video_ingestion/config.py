@@ -13,6 +13,7 @@ class VideoIngestionConfig:
     service_bus_namespace: str
     video_ingested_queue: str
     app_insights_connection_string: str
+    build_id: str = "unknown"
 
     @classmethod
     def from_env(cls) -> VideoIngestionConfig:
@@ -26,6 +27,7 @@ class VideoIngestionConfig:
                 "MIMESIS_SERVICE_BUS_INGESTED_QUEUE", "sb-queue-video-ingested"
             ),
             app_insights_connection_string=_require("MIMESIS_APP_INSIGHTS_CONNECTION_STRING"),
+            build_id=os.getenv("BUILD_ID", "unknown"),
         )
 
 
