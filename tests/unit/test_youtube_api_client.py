@@ -10,7 +10,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import httplib2
-import pytest
 
 from mimesis.video_discovery.infra.youtube_api_client import YouTubeApiClient
 
