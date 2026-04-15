@@ -1,6 +1,10 @@
 """YouTube Data API v3 adapter — concrete implementation of YouTubeApiPort.
 
-Uses ``google-api-python-client`` with a developer key retrieved from Key Vault.
+Direct REST implementation using stdlib urllib. Does NOT use
+google-api-python-client, which unconditionally invokes google.auth.default()
+in some versions — a call that always fails inside Azure Functions where no
+Google Application Default Credentials are present (issues #25, #27).
+
 Two-call strategy per page (ADR-03):
   1. ``search.list``  → videoIds
   2. ``videos.list``  → full metadata batch (1 quota unit)
@@ -8,13 +12,13 @@ Two-call strategy per page (ADR-03):
 
 from __future__ import annotations
 
+import json
 import logging
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime
 from typing import Any, cast
-
-from google.auth.credentials import AnonymousCredentials
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 
 from mimesis.video_discovery.domain.exceptions import (
     QuotaExceededException,
@@ -25,8 +29,7 @@ from mimesis.video_discovery.ports.youtube_api_port import SearchPage, YouTubeAp
 
 logger = logging.getLogger(__name__)
 
-_YT_API_SERVICE = "youtube"
-_YT_API_VERSION = "v3"
+_YT_API_BASE = "https://www.googleapis.com/youtube/v3"
 
 
 def _safe_int(value: object) -> int | None:
@@ -70,22 +73,38 @@ def _parse_metadata(item: dict[str, Any]) -> tuple[str, VideoMetadata]:
     return video_id, metadata
 
 
+def _yt_get(url: str) -> dict[str, Any]:
+    """Issue an unauthenticated GET to the YouTube Data API and return parsed JSON.
+
+    The API key is embedded in the URL query string by the caller; no
+    Authorization header is needed for developer-key access.
+
+    Raises:
+        QuotaExceededException: on HTTP 403 (quota exceeded).
+        YouTubeApiError: on any other HTTP or network error.
+    """
+    try:
+        with urllib.request.urlopen(url) as response:  # noqa: S310
+            return cast(dict[str, Any], json.loads(response.read().decode()))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode(errors="replace")
+        if exc.code == 403:
+            raise QuotaExceededException(f"HTTP 403: {body}") from exc
+        raise YouTubeApiError(f"HTTP {exc.code}: {body}") from exc
+    except urllib.error.URLError as exc:
+        raise YouTubeApiError(f"URL error: {exc.reason}") from exc
+
+
 class YouTubeApiClient(YouTubeApiPort):
-    """Calls YouTube Data API v3 search.list + videos.list per page."""
+    """Calls YouTube Data API v3 search.list + videos.list per page.
+
+    Uses plain urllib (stdlib) so that no Google authentication library is
+    involved at all — avoiding google.auth.default() which fails in Azure
+    where there are no Google Application Default Credentials.
+    """
 
     def __init__(self, api_key: str) -> None:
-        # Explicitly pass AnonymousCredentials to prevent google-api-python-client
-        # from calling google.auth.default() inside build_from_document(), which
-        # fails in Azure where no Google Application Default Credentials exist.
-        # AnonymousCredentials adds no Authorization header; the developerKey is
-        # appended as a URL query parameter by the client library on every request.
-        self._service = build(
-            _YT_API_SERVICE,
-            _YT_API_VERSION,
-            developerKey=api_key,
-            cache_discovery=False,
-            credentials=AnonymousCredentials(),  # type: ignore[no-untyped-call]
-        )
+        self._api_key = api_key
 
     def search_page(
         self,
@@ -96,34 +115,29 @@ class YouTubeApiClient(YouTubeApiPort):
         filters = query.filters
 
         # ── 1. search.list ───────────────────────────────────────────────────
-        search_kwargs: dict[str, object] = {
+        search_params: dict[str, str] = {
             "q": query.keyword,
             "part": "snippet",
             "type": "video",
-            "maxResults": min(page_size, 50),
+            "maxResults": str(min(page_size, 50)),
+            "key": self._api_key,
         }
         if page_token:
-            search_kwargs["pageToken"] = page_token
+            search_params["pageToken"] = page_token
         if filters:
             if filters.language:
-                search_kwargs["relevanceLanguage"] = filters.language
+                search_params["relevanceLanguage"] = filters.language
             if filters.published_after:
-                search_kwargs["publishedAfter"] = filters.published_after.strftime(
+                search_params["publishedAfter"] = filters.published_after.strftime(
                     "%Y-%m-%dT%H:%M:%SZ"
                 )
             if filters.video_duration:
-                search_kwargs["videoDuration"] = filters.video_duration
+                search_params["videoDuration"] = filters.video_duration
             if filters.region_code:
-                search_kwargs["regionCode"] = filters.region_code
+                search_params["regionCode"] = filters.region_code
 
-        try:
-            search_response: dict[str, object] = (
-                self._service.search().list(**search_kwargs).execute()
-            )
-        except HttpError as exc:
-            if exc.resp.status == 403:
-                raise QuotaExceededException(str(exc)) from exc
-            raise YouTubeApiError(str(exc)) from exc
+        search_url = f"{_YT_API_BASE}/search?{urllib.parse.urlencode(search_params)}"
+        search_response = _yt_get(search_url)
 
         items = cast(list[dict[str, Any]], search_response.get("items", []))
         next_page_token_raw = search_response.get("nextPageToken")
@@ -134,17 +148,13 @@ class YouTubeApiClient(YouTubeApiPort):
 
         # ── 2. videos.list (batch) ───────────────────────────────────────────
         video_ids = ",".join(str(item["id"]["videoId"]) for item in items)
-
-        try:
-            videos_response: dict[str, object] = (
-                self._service.videos()
-                .list(id=video_ids, part="snippet,contentDetails,statistics")
-                .execute()
-            )
-        except HttpError as exc:
-            if exc.resp.status == 403:
-                raise QuotaExceededException(str(exc)) from exc
-            raise YouTubeApiError(str(exc)) from exc
+        videos_params: dict[str, str] = {
+            "id": video_ids,
+            "part": "snippet,contentDetails,statistics",
+            "key": self._api_key,
+        }
+        videos_url = f"{_YT_API_BASE}/videos?{urllib.parse.urlencode(videos_params)}"
+        videos_response = _yt_get(videos_url)
 
         video_items = cast(list[dict[str, Any]], videos_response.get("items", []))
         results = [_parse_metadata(item) for item in video_items]
@@ -155,4 +165,5 @@ class YouTubeApiClient(YouTubeApiPort):
             page_token,
             len(results),
         )
+
         return SearchPage(video_metadatas=results, next_page_token=next_page_token)
