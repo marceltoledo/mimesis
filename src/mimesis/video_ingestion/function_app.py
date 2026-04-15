@@ -31,6 +31,7 @@ _config = VideoIngestionConfig.from_env()
 configure_observability(
     connection_string=_config.app_insights_connection_string,
     service_name="mimesis-video-ingestion",
+    build_id=_config.build_id,
 )
 
 _service = VideoIngestionService(

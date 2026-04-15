@@ -36,6 +36,9 @@ class VideoDiscoveryConfig:
     default_max_results: int = 15
     """Default ceiling for paginated searches when callers omit max_results."""
 
+    build_id: str = "unknown"
+    """Deployment identity stamped by CI (e.g. 'a3f9c1b2-47'). Defaults to 'unknown'."""
+
     @classmethod
     def from_env(cls) -> VideoDiscoveryConfig:
         """Build config from environment variables.  Raises RuntimeError for missing values."""
@@ -47,6 +50,7 @@ class VideoDiscoveryConfig:
             service_bus_queue=os.getenv("MIMESIS_SERVICE_BUS_QUEUE", "sb-queue-video-discovered"),
             app_insights_connection_string=_require("MIMESIS_APP_INSIGHTS_CONNECTION_STRING"),
             default_max_results=int(os.getenv("MIMESIS_DEFAULT_MAX_RESULTS", "15")),
+            build_id=os.getenv("BUILD_ID", "unknown"),
         )
 
 

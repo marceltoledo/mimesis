@@ -27,15 +27,14 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 @app.route(route="video-discovery", methods=["POST"])
 def video_discovery(req: func.HttpRequest) -> func.HttpResponse:
     """Run one discovery job and publish VideoDiscovered events."""
+    config = VideoDiscoveryConfig.from_env()
+    configure_observability(
+        connection_string=config.app_insights_connection_string,
+        service_name="mimesis-video-discovery",
+        build_id=config.build_id,
+    )
     try:
         payload = _read_json_body(req)
-        config = VideoDiscoveryConfig.from_env()
-
-        configure_observability(
-            connection_string=config.app_insights_connection_string,
-            service_name="mimesis-video-discovery",
-        )
-
         query = _build_query(payload)
         max_results = _resolve_max_results(payload, config.default_max_results)
 
@@ -74,12 +73,14 @@ def video_discovery(req: func.HttpRequest) -> func.HttpResponse:
             body=json.dumps(body),
             status_code=status_code,
             mimetype="application/json",
+            headers={"X-Build-Id": config.build_id},
         )
     except ValueError as exc:
         return func.HttpResponse(
             body=json.dumps({"error": str(exc)}),
             status_code=400,
             mimetype="application/json",
+            headers={"X-Build-Id": config.build_id},
         )
     except Exception:
         logger.exception("VideoDiscovery function failed")
@@ -87,6 +88,7 @@ def video_discovery(req: func.HttpRequest) -> func.HttpResponse:
             body=json.dumps({"error": "internal_server_error"}),
             status_code=500,
             mimetype="application/json",
+            headers={"X-Build-Id": config.build_id},
         )
 
 
