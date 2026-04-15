@@ -268,6 +268,8 @@ resource "azapi_resource" "video_ingestion" {
           { name = "MIMESIS_SERVICE_BUS_INGESTED_QUEUE", value = azurerm_servicebus_queue.video_ingested.name },
           { name = "MIMESIS_APP_INSIGHTS_CONNECTION_STRING", value = azurerm_application_insights.main.connection_string },
           { name = "MIMESIS_SERVICE_BUS__fullyQualifiedNamespace", value = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net" },
+          { name = "MIMESIS_SERVICE_BUS__credential", value = "managedidentity" },
+          { name = "MIMESIS_SERVICE_BUS__clientId", value = azurerm_user_assigned_identity.main.client_id },
         ]
       }
     }
