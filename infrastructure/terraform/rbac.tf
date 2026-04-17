@@ -43,3 +43,15 @@ resource "azurerm_role_assignment" "mi_sb_receiver" {
   role_definition_name = "Azure Service Bus Data Receiver"
   principal_id         = azurerm_user_assigned_identity.main.principal_id
 }
+
+# ── Managed Identity: Storage Queue Data Contributor ─────────────────────────
+# Required by the Azure Functions runtime when AzureWebJobsStorage uses managed
+# identity authentication. Without queue access, the runtime cannot manage its
+# internal queue-based orchestration, which prevents Service Bus triggers from
+# being reliably registered and invoked.
+
+resource "azurerm_role_assignment" "mi_queue_contributor" {
+  scope                = azurerm_storage_account.main.id
+  role_definition_name = "Storage Queue Data Contributor"
+  principal_id         = azurerm_user_assigned_identity.main.principal_id
+}
