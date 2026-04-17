@@ -115,9 +115,7 @@ class TestVideoIngestionHandler:
         ):
             video_ingestion(_make_message())
 
-    def test_message_id_appears_in_error_log(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_message_id_appears_in_error_log(self, caplog: pytest.LogCaptureFixture) -> None:
         mock_service = MagicMock()
         mock_service.ingest_discovered_video.side_effect = VideoIngestionError("oops")
 
