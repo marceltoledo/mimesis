@@ -18,14 +18,18 @@ _REQUIRED_ENV = {
     "MIMESIS_STORAGE_ACCOUNT_URL": "https://example.blob.core.windows.net/",
     "MIMESIS_SERVICE_BUS_NAMESPACE": "example.servicebus.windows.net",
     "MIMESIS_APP_INSIGHTS_CONNECTION_STRING": "InstrumentationKey=test",
+    "MIMESIS_KEY_VAULT_URL": "https://example.vault.azure.net/",
 }
 
 # Patch configure_azure_monitor to prevent the Azure Monitor SDK from
 # attempting real connections during module-level initialisation.
+# Patch SecretClient to prevent Key Vault calls during module-level cookie loading.
 with (
     patch.dict(os.environ, _REQUIRED_ENV),
     patch("mimesis.shared.observability.configure_azure_monitor"),
+    patch("azure.keyvault.secrets.SecretClient") as _mock_kv_client,
 ):
+    _mock_kv_client.return_value.get_secret.return_value.value = None
     import mimesis.video_ingestion.function_app as _function_module
     from mimesis.video_ingestion.function_app import video_ingestion
 

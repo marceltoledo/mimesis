@@ -1,36 +1,46 @@
-"""Media processing adapter using pytubefix and pydub."""
+"""Media processing adapter using yt-dlp and pydub."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import yt_dlp
 from pydub import AudioSegment
-from pytubefix import YouTube
 
 from mimesis.video_ingestion.domain.exceptions import MediaProcessingError
 from mimesis.video_ingestion.ports.media_processor_port import MediaProcessorPort
 
 
-class PytubefixMediaProcessor(MediaProcessorPort):
-    """Downloads source video and extracts MP3 audio."""
+class YtDlpMediaProcessor(MediaProcessorPort):
+    """Downloads source video and extracts MP3 audio using yt-dlp."""
+
+    def __init__(self, cookies: str | None = None) -> None:
+        self._cookies = cookies
 
     def download_source_video(self, youtube_url: str) -> bytes:
         try:
             with TemporaryDirectory() as tmpdir:
-                yt = YouTube(youtube_url)
-                stream = (
-                    yt.streams.filter(progressive=True, file_extension="mp4")
-                    .order_by("resolution")
-                    .desc()
-                    .first()
-                )
-                if stream is None:
-                    raise MediaProcessingError("No progressive mp4 stream available.")
+                ydl_opts: dict[str, object] = {
+                    "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                    "outtmpl": str(Path(tmpdir) / "source.%(ext)s"),
+                    "quiet": True,
+                    "no_warnings": True,
+                    "merge_output_format": "mp4",
+                }
 
-                output_path = Path(tmpdir)
-                downloaded = stream.download(output_path=str(output_path), filename="source.mp4")
-                return Path(downloaded).read_bytes()
+                if self._cookies:
+                    cookie_path = Path(tmpdir) / "cookies.txt"
+                    cookie_path.write_text(self._cookies)
+                    ydl_opts["cookiefile"] = str(cookie_path)
+
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([youtube_url])
+
+                result_path = Path(tmpdir) / "source.mp4"
+                if not result_path.exists():
+                    raise MediaProcessingError("yt-dlp did not produce an output file.")
+                return result_path.read_bytes()
         except MediaProcessingError:
             raise
         except Exception as exc:
