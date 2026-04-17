@@ -234,6 +234,13 @@ resource "azapi_resource" "video_ingestion" {
     properties = {
       serverFarmId = azurerm_service_plan.functions.id
       httpsOnly    = true
+
+      # Explicitly bind Key Vault reference resolution to the UserAssigned
+      # identity. Without this the Functions host defaults to SystemAssigned
+      # MSI, which does not exist, causing credential resolution failures
+      # during Service Bus trigger bootstrapping on FC1.
+      keyVaultReferenceIdentity = azurerm_user_assigned_identity.main.id
+
       functionAppConfig = {
         deployment = {
           storage = {
@@ -262,7 +269,10 @@ resource "azapi_resource" "video_ingestion" {
           { name = "AzureWebJobsStorage__credential", value = "managedidentity" },
           { name = "AzureWebJobsStorage__clientId", value = azurerm_user_assigned_identity.main.client_id },
           { name = "AZURE_CLIENT_ID", value = azurerm_user_assigned_identity.main.client_id },
-          { name = "MIMESIS_STORAGE_ACCOUNT_URL", value = azurerm_storage_account.main.primary_table_endpoint },
+          # BC-02 needs the blob endpoint: BlobArtifactStore uses it directly,
+          # and TableIngestionLedger derives the table endpoint via
+          # .replace(".blob.", ".table.") in application code.
+          { name = "MIMESIS_STORAGE_ACCOUNT_URL", value = azurerm_storage_account.main.primary_blob_endpoint },
           { name = "MIMESIS_INGESTION_LEDGER_TABLE", value = azurerm_storage_table.ingestion_ledger.name },
           { name = "MIMESIS_SERVICE_BUS_NAMESPACE", value = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net" },
           { name = "MIMESIS_SERVICE_BUS_INGESTED_QUEUE", value = azurerm_servicebus_queue.video_ingested.name },
