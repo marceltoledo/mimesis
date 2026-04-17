@@ -384,6 +384,30 @@ jobs:
           fi
           echo "Smoke test PASSED — HTTP $http_status"
 
+      - name: Smoke-trigger BC-01 (seed Service Bus queue)
+        run: |
+          FUNC_KEY="${{ steps.get-key.outputs.function_key }}"
+          FUNC_URL="${{ env.AZURE_BC01_FUNCTION_URL }}"
+          EXTRA_HEADERS=()
+          if [ -n "$FUNC_KEY" ]; then
+            EXTRA_HEADERS=(-H "x-functions-key: $FUNC_KEY")
+          fi
+          http_status=$(curl -s -w "\n%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            "${EXTRA_HEADERS[@]}" \
+            -d '{"keyword":"Gil Gomes Conta","max_results":6}' \
+            "$FUNC_URL")
+          body=$(echo "$http_status" | head -n -1)
+          status=$(echo "$http_status" | tail -n 1)
+          echo "HTTP status: $status"
+          echo "Response body: $body"
+          if [ "$status" -ne 200 ]; then
+            echo "::warning::BC-01 seed call returned HTTP $status — Service Bus queue may not be seeded for BC-02 trigger check."
+          else
+            echo "BC-01 seed call succeeded — Service Bus queue seeded."
+          fi
+
       - name: Smoke test BC-02 function app (health)
         run: |
           APP="${{ env.AZURE_BC02_FUNCTION_APP_NAME }}"
