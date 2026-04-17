@@ -19,8 +19,13 @@ output "key_vault_url" {
 }
 
 output "storage_account_url" {
-  description = "Primary table endpoint — set as MIMESIS_STORAGE_ACCOUNT_URL."
+  description = "Primary table endpoint — set as MIMESIS_STORAGE_ACCOUNT_URL for BC-01 (Video Discovery, table-only)."
   value       = azurerm_storage_account.main.primary_table_endpoint
+}
+
+output "blob_storage_account_url" {
+  description = "Primary blob endpoint — set as MIMESIS_STORAGE_ACCOUNT_URL for BC-02 (Video Ingestion, blob + table)."
+  value       = azurerm_storage_account.main.primary_blob_endpoint
 }
 
 output "service_bus_namespace" {
