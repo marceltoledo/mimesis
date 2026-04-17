@@ -13,7 +13,9 @@ class VideoIngestionConfig:
     service_bus_namespace: str
     video_ingested_queue: str
     app_insights_connection_string: str
+    key_vault_url: str
     build_id: str = "unknown"
+    cookies_secret_name: str = "youtube-cookies"
 
     @classmethod
     def from_env(cls) -> VideoIngestionConfig:
@@ -27,7 +29,9 @@ class VideoIngestionConfig:
                 "MIMESIS_SERVICE_BUS_INGESTED_QUEUE", "sb-queue-video-ingested"
             ),
             app_insights_connection_string=_require("MIMESIS_APP_INSIGHTS_CONNECTION_STRING"),
+            key_vault_url=_require("MIMESIS_KEY_VAULT_URL"),
             build_id=os.getenv("BUILD_ID", "unknown"),
+            cookies_secret_name=os.getenv("MIMESIS_YOUTUBE_COOKIES_SECRET", "youtube-cookies"),
         )
 
 

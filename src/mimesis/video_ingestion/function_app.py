@@ -5,6 +5,9 @@ from __future__ import annotations
 import logging
 
 import azure.functions as func
+from azure.core.exceptions import ResourceNotFoundError
+from azure.identity import DefaultAzureCredential
+from azure.keyvault.secrets import SecretClient
 
 from mimesis.shared.observability import configure_observability
 from mimesis.video_ingestion.application.video_ingestion_service import (
@@ -18,7 +21,7 @@ from mimesis.video_ingestion.domain.exceptions import (
 )
 from mimesis.video_ingestion.infra.blob_artifact_store import BlobArtifactStore
 from mimesis.video_ingestion.infra.ingestion_ledger import TableIngestionLedger
-from mimesis.video_ingestion.infra.media_processor import PytubefixMediaProcessor
+from mimesis.video_ingestion.infra.media_processor import YtDlpMediaProcessor
 from mimesis.video_ingestion.infra.video_ingested_event_publisher import (
     ServiceBusVideoIngestedPublisher,
 )
@@ -34,13 +37,43 @@ configure_observability(
     build_id=_config.build_id,
 )
 
+
+def _load_youtube_cookies(key_vault_url: str, secret_name: str) -> str | None:
+    try:
+        credential = DefaultAzureCredential()
+        client = SecretClient(vault_url=key_vault_url, credential=credential)
+        secret = client.get_secret(secret_name)
+        if secret.value:
+            logger.info("YouTube cookies loaded from Key Vault | secret=%s", secret_name)
+            return secret.value
+        logger.warning("YouTube cookies secret is empty | secret=%s", secret_name)
+        return None
+    except ResourceNotFoundError:
+        logger.warning(
+            "YouTube cookies secret not found in Key Vault, proceeding without cookies"
+            " | secret=%s",
+            secret_name,
+        )
+        return None
+    except Exception:
+        logger.warning(
+            "Failed to retrieve YouTube cookies from Key Vault, proceeding without cookies"
+            " | secret=%s",
+            secret_name,
+            exc_info=True,
+        )
+        return None
+
+
+_cookies = _load_youtube_cookies(_config.key_vault_url, _config.cookies_secret_name)
+
 _service = VideoIngestionService(
     artifact_store=BlobArtifactStore(account_url=_config.storage_account_url),
     ledger=TableIngestionLedger(
         account_url=_config.storage_account_url.replace(".blob.", ".table."),
         table_name=_config.ingestion_ledger_table,
     ),
-    media_processor=PytubefixMediaProcessor(),
+    media_processor=YtDlpMediaProcessor(cookies=_cookies),
     event_publisher=ServiceBusVideoIngestedPublisher(
         fully_qualified_namespace=_config.service_bus_namespace,
         queue_name=_config.video_ingested_queue,
