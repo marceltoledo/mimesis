@@ -176,9 +176,11 @@ jobs:
           az functionapp stop --name "$APP" --resource-group "$RG"
           az functionapp start --name "$APP" --resource-group "$RG"
 
-          # 3. Notify the platform of updated triggers
+          # 3. Notify the platform of updated triggers (best-effort — host may
+          #    still be starting up after functionapp start, so allow failure).
           az rest --method post \
-            --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$APP/syncfunctiontriggers?api-version=2024-04-01"
+            --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$APP/syncfunctiontriggers?api-version=2024-04-01" \
+            || true
 
       # BC-02: Video Ingestion
       # Packages functions/video-ingestion/ (includes host.json) with all deps.
@@ -222,7 +224,8 @@ jobs:
           az functionapp start --name "$APP" --resource-group "$RG"
 
           az rest --method post \
-            --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$APP/syncfunctiontriggers?api-version=2024-04-01"
+            --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$APP/syncfunctiontriggers?api-version=2024-04-01" \
+            || true
 
   # ── 3. Smoke test: verify BC-01 HTTP endpoint and BC-02 function app ────────
   smoke-dev:
