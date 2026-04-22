@@ -458,16 +458,15 @@ jobs:
           VIDEO_ID="J-QfkYusj-0"
           # Blobs are stored as {date}/{video_id}/source.mp4 inside the container,
           # so the video_id is not at the start of the name — use contains() instead of prefix.
-          # Allow 180s (18 × 10s) to account for FC1 cold-start + yt-dlp download time.
-          echo "Polling raw-videos container for blob containing $VIDEO_ID (up to 180s)..."
+          echo "Polling raw-videos container for blob containing $VIDEO_ID (up to 90s)..."
           found=0
-          for i in $(seq 1 18); do
+          for i in $(seq 1 9); do
             count=$(az storage blob list \
               --account-name "$STORAGE_ACCOUNT" \
               --container-name raw-videos \
               --auth-mode login \
               --query "length([?contains(name, '$VIDEO_ID')])" -o tsv 2>/dev/null || echo "0")
-            echo "Attempt $i/18: raw-videos blobs for $VIDEO_ID = $count"
+            echo "Attempt $i/9: raw-videos blobs for $VIDEO_ID = $count"
             if [ "${count:-0}" -gt 0 ]; then
               found=1
               break
@@ -475,7 +474,7 @@ jobs:
             sleep 10
           done
           if [ "$found" -ne 1 ]; then
-            echo "FAILED — no blob containing $VIDEO_ID found in raw-videos after 180s."
+            echo "FAILED — no blob containing $VIDEO_ID found in raw-videos after 90s."
             exit 1
           fi
           echo "Smoke test PASSED — BC-02 wrote raw-video artifact for $VIDEO_ID."
