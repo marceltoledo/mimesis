@@ -149,10 +149,10 @@ jobs:
       #   3. If ResultPackagePath is null → falls back to released-package.zip
       #      in the same container.
       #
-      # Strategy: upload the pre-built zip as released-package.zip, then write
-      # a fresh kudu-state.json with a new UUID and ResultPackagePath: null.
-      # On the next cold-start the runtime finds no local artifact and loads
-      # from the blob automatically.
+      # Strategy: generate a unique DEPLOY_ID and upload the zip as
+      # deploy-{DEPLOY_ID}.zip. Set ResultPackagePath to this unique blob name
+      # in kudu-state.json. The novel path forces the runtime to download fresh
+      # on the next cold-start (warm workers ignore blobs they have already cached).
       - name: Deploy BC-01 (Video Discovery)
         env:
           RG: ${{ env.RESOURCE_GROUP }}
@@ -166,18 +166,22 @@ jobs:
           echo "Storage account : $STORAGE_ACCOUNT"
           echo "Deployment container: $CONTAINER"
 
-          # 1. Upload new package as released-package.zip
+          # 1. Generate a unique deployment ID — used as the blob name so the
+          #    runtime always sees a path it has never cached, forcing a fresh
+          #    download on the next cold-start.
+          DEPLOY_ID=$(python3 -c "import uuid; print(str(uuid.uuid4()))")
+          NOW=$(python3 -c "from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f0Z'))")
+
+          # 2. Upload package under a unique blob name (unique per deploy, avoids warm-worker cache)
           az storage blob upload \
             --account-name "$STORAGE_ACCOUNT" \
             --container-name "$CONTAINER" \
-            --name released-package.zip \
+            --name "deploy-${DEPLOY_ID}.zip" \
             --file deploy-bc01.zip \
             --overwrite \
             --auth-mode key
 
-          # 2. Generate fresh kudu-state.json with a new deployment ID
-          DEPLOY_ID=$(python3 -c "import uuid; print(str(uuid.uuid4()))")
-          NOW=$(python3 -c "from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f0Z'))")
+          # 3. Generate fresh kudu-state.json pointing ResultPackagePath at the unique blob
           python3 -c "
           import json, sys
           data = {
@@ -195,11 +199,11 @@ jobs:
                       'RemoteBuild': False,
                       'SourcePackageUri': None,
                       'SourcePackagePath': None,
-                      'ResultPackagePath': None,
+                      'ResultPackagePath': sys.argv[3],
                       'Complete': True,
                       'Status': 4,
                       'StatusText': '',
-                      'UploadedPackageName': 'released-package.zip',
+                      'UploadedPackageName': sys.argv[3],
                       'KuduRestartCount': 0,
                       'LatestDeploymentStep': 'Kudu-SyncTriggerStep',
                       'FDMEnabled': False,
@@ -208,7 +212,7 @@ jobs:
               }
           }
           print(json.dumps(data))
-          " "$DEPLOY_ID" "$NOW" > /tmp/kudu-state-bc01.json
+          " "$DEPLOY_ID" "$NOW" "deploy-${DEPLOY_ID}.zip" > /tmp/kudu-state-bc01.json
 
           # 3. Upload new kudu-state.json
           az storage blob upload \
@@ -219,8 +223,9 @@ jobs:
             --overwrite \
             --auth-mode key
 
-          # 4. Restart (terminates existing workers; next cold-start uses new blob)
-          az functionapp restart --name "$APP" --resource-group "$RG"
+          # 4. Force a true cold-start (stop+start; restart is warm and won't re-read the blob)
+          az functionapp stop --name "$APP" --resource-group "$RG"
+          az functionapp start --name "$APP" --resource-group "$RG"
 
           # 5. Notify the platform of updated triggers
           az rest --method post \
@@ -251,16 +256,18 @@ jobs:
           echo "Storage account : $STORAGE_ACCOUNT"
           echo "Deployment container: $CONTAINER"
 
+          # Upload package under a unique blob name (unique per deploy, avoids warm-worker cache)
+          DEPLOY_ID=$(python3 -c "import uuid; print(str(uuid.uuid4()))")
+          NOW=$(python3 -c "from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f0Z'))")
+
           az storage blob upload \
             --account-name "$STORAGE_ACCOUNT" \
             --container-name "$CONTAINER" \
-            --name released-package.zip \
+            --name "deploy-${DEPLOY_ID}.zip" \
             --file deploy-bc02.zip \
             --overwrite \
             --auth-mode key
 
-          DEPLOY_ID=$(python3 -c "import uuid; print(str(uuid.uuid4()))")
-          NOW=$(python3 -c "from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f0Z'))")
           python3 -c "
           import json, sys
           data = {
@@ -278,11 +285,11 @@ jobs:
                       'RemoteBuild': False,
                       'SourcePackageUri': None,
                       'SourcePackagePath': None,
-                      'ResultPackagePath': None,
+                      'ResultPackagePath': sys.argv[3],
                       'Complete': True,
                       'Status': 4,
                       'StatusText': '',
-                      'UploadedPackageName': 'released-package.zip',
+                      'UploadedPackageName': sys.argv[3],
                       'KuduRestartCount': 0,
                       'LatestDeploymentStep': 'Kudu-SyncTriggerStep',
                       'FDMEnabled': False,
@@ -291,7 +298,7 @@ jobs:
               }
           }
           print(json.dumps(data))
-          " "$DEPLOY_ID" "$NOW" > /tmp/kudu-state-bc02.json
+          " "$DEPLOY_ID" "$NOW" "deploy-${DEPLOY_ID}.zip" > /tmp/kudu-state-bc02.json
 
           az storage blob upload \
             --account-name "$STORAGE_ACCOUNT" \
@@ -301,7 +308,9 @@ jobs:
             --overwrite \
             --auth-mode key
 
-          az functionapp restart --name "$APP" --resource-group "$RG"
+          # Force a true cold-start (stop+start; restart is warm and won't re-read the blob)
+          az functionapp stop --name "$APP" --resource-group "$RG"
+          az functionapp start --name "$APP" --resource-group "$RG"
 
           az rest --method post \
             --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$APP/syncfunctiontriggers?api-version=2024-04-01"
