@@ -394,25 +394,62 @@ jobs:
           echo "Smoke test PASSED — HTTP $http_status"
 
       - name: Smoke test BC-02 (send message to Service Bus)
+        env:
+          AZURE_CLIENT_ID: ${{ env.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ env.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ env.AZURE_SUBSCRIPTION_ID }}
         run: |
+          # az servicebus message send is not available in the Azure CLI.
+          # Use the azure-servicebus Python SDK with DefaultAzureCredential (OIDC).
+          pip install azure-servicebus azure-identity --quiet
           RG="${{ env.RESOURCE_GROUP }}"
           SB_NAMESPACE=$(echo "$RG" | sed 's/-rg$//')-bus
-          SB_QUEUE="sb-queue-video-discovered"
-          MESSAGE_ID=$(python3 -c "import uuid; print(str(uuid.uuid4()))")
-          echo "Sending smoke message to $SB_NAMESPACE/$SB_QUEUE (message-id: $MESSAGE_ID)"
-          cat > /tmp/smoke-message.json << 'ENDJSON'
-          {"search_job_id": "d4ee9c78-80c4-41d3-9283-1ba45a6ae030", "video_id": "J-QfkYusj-0", "occurred_at": "2026-04-22T21:27:29.466355+00:00", "metadata": {"title": "Gil Gomes 4 - Histórias Inéditas!", "description": "Gil Gomes, o maior contador de histórias do radio brasileiro\nA vida como ela é, sem retoques.", "channel_id": "UCLE6H-xQnEx4U4PBsjht_SA", "channel_title": "peri lobo", "published_at": "2022-02-17T16:02:28+00:00", "duration": "PT11M12S", "view_count": 16155, "like_count": 561, "thumbnails": {"default": {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/default.jpg", "width": 120, "height": 90}, "medium": {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/mqdefault.jpg", "width": 320, "height": 180}, "high": {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/hqdefault.jpg", "width": 480, "height": 360}, "standard": {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/sddefault.jpg", "width": 640, "height": 480}}, "tags": null, "category_id": "25", "default_language": "pt-PT"}}
-          ENDJSON
-          if ! az servicebus message send \
-            --namespace-name "$SB_NAMESPACE" \
-            --queue-name "$SB_QUEUE" \
-            --auth-type login \
-            --message-id "$MESSAGE_ID" \
-            --body "$(cat /tmp/smoke-message.json)"; then
-            echo "FAILED — could not send smoke message to Service Bus queue."
-            exit 1
-          fi
-          echo "Smoke message sent successfully (message-id: $MESSAGE_ID)."
+          python3 << 'PYEOF'
+          import os, uuid, json, sys
+          from azure.servicebus import ServiceBusClient, ServiceBusMessage
+          from azure.identity import DefaultAzureCredential
+
+          rg = os.environ["RESOURCE_GROUP"]
+          namespace = rg.replace("-rg", "") + "-bus" + ".servicebus.windows.net"
+          queue = "sb-queue-video-discovered"
+          message_id = str(uuid.uuid4())
+
+          body = json.dumps({
+            "search_job_id": "d4ee9c78-80c4-41d3-9283-1ba45a6ae030",
+            "video_id": "J-QfkYusj-0",
+            "occurred_at": "2026-04-22T21:27:29.466355+00:00",
+            "metadata": {
+              "title": "Gil Gomes 4 - Histórias Inéditas!",
+              "description": "Gil Gomes, o maior contador de histórias do radio brasileiro\nA vida como ela é, sem retoques.",
+              "channel_id": "UCLE6H-xQnEx4U4PBsjht_SA",
+              "channel_title": "peri lobo",
+              "published_at": "2022-02-17T16:02:28+00:00",
+              "duration": "PT11M12S",
+              "view_count": 16155,
+              "like_count": 561,
+              "thumbnails": {
+                "default":  {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/default.jpg",  "width": 120, "height": 90},
+                "medium":   {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/mqdefault.jpg","width": 320, "height": 180},
+                "high":     {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/hqdefault.jpg","width": 480, "height": 360},
+                "standard": {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/sddefault.jpg","width": 640, "height": 480}
+              },
+              "tags": None,
+              "category_id": "25",
+              "default_language": "pt-PT"
+            }
+          })
+
+          print(f"Sending smoke message to {namespace}/{queue} (message-id: {message_id})")
+          try:
+            credential = DefaultAzureCredential()
+            with ServiceBusClient(namespace, credential) as client:
+              with client.get_queue_sender(queue) as sender:
+                sender.send_messages(ServiceBusMessage(body=body, message_id=message_id))
+            print(f"Smoke message sent successfully (message-id: {message_id}).")
+          except Exception as exc:
+            print(f"FAILED — could not send smoke message to Service Bus queue: {exc}", file=sys.stderr)
+            sys.exit(1)
+          PYEOF
 
       - name: Smoke test BC-02 blob output (end-to-end)
         run: |
