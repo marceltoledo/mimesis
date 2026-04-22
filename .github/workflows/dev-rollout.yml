@@ -135,6 +135,8 @@ jobs:
           mkdir -p staging-bc01
           cp -r functions/video-discovery/. staging-bc01/
           cp -r .python_packages staging-bc01/
+          # Stamp the build ID into the wrapper so the deployed file is self-describing.
+          sed -i "s/__BUILD_ID__/${GITHUB_SHA::8}-${GITHUB_RUN_NUMBER}/g" staging-bc01/function_app.py
           cd staging-bc01
           zip -r ../deploy-bc01.zip . \
             --exclude "*.pyc" \
@@ -238,6 +240,8 @@ jobs:
           mkdir -p staging-bc02
           cp -r functions/video-ingestion/. staging-bc02/
           cp -r .python_packages staging-bc02/
+          # Stamp the build ID into the wrapper so the deployed file is self-describing.
+          sed -i "s/__BUILD_ID__/${GITHUB_SHA::8}-${GITHUB_RUN_NUMBER}/g" staging-bc02/function_app.py
           cd staging-bc02
           zip -r ../deploy-bc02.zip . \
             --exclude "*.pyc" \
