@@ -280,6 +280,7 @@ resource "azapi_resource" "video_ingestion" {
           { name = "MIMESIS_SERVICE_BUS__fullyQualifiedNamespace", value = "${azurerm_servicebus_namespace.main.name}.servicebus.windows.net" },
           { name = "MIMESIS_SERVICE_BUS__credential", value = "managedidentity" },
           { name = "MIMESIS_SERVICE_BUS__clientId", value = azurerm_user_assigned_identity.main.client_id },
+          { name = "MIMESIS_KEY_VAULT_URL", value = azurerm_key_vault.main.vault_uri },
         ]
       }
     }
