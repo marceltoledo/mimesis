@@ -393,92 +393,50 @@ jobs:
           fi
           echo "Smoke test PASSED — HTTP $http_status"
 
-      - name: Smoke-trigger BC-01 (seed Service Bus queue)
+      - name: Smoke test BC-02 (send message to Service Bus)
         run: |
-          FUNC_KEY="${{ steps.get-key.outputs.function_key }}"
-          FUNC_URL="${{ env.AZURE_BC01_FUNCTION_URL }}"
-          EXTRA_HEADERS=()
-          if [ -n "$FUNC_KEY" ]; then
-            EXTRA_HEADERS=(-H "x-functions-key: $FUNC_KEY")
-          fi
-          http_status=$(curl -s -w "\n%{http_code}" \
-            -X POST \
-            -H "Content-Type: application/json" \
-            "${EXTRA_HEADERS[@]}" \
-            -d '{"keyword":"Gil Gomes Conta","max_results":6}' \
-            "$FUNC_URL")
-          body=$(echo "$http_status" | head -n -1)
-          status=$(echo "$http_status" | tail -n 1)
-          echo "HTTP status: $status"
-          echo "Response body: $body"
-          if [ "$status" -ne 200 ]; then
-            echo "::warning::BC-01 seed call returned HTTP $status — Service Bus queue may not be seeded for BC-02 trigger check."
-          else
-            echo "BC-01 seed call succeeded — Service Bus queue seeded."
-          fi
-
-      - name: Smoke test BC-02 function app (health)
-        run: |
-          APP="${{ env.AZURE_BC02_FUNCTION_APP_NAME }}"
           RG="${{ env.RESOURCE_GROUP }}"
-          SUB="${{ env.AZURE_SUBSCRIPTION_ID }}"
-          # Use az rest with the same API version (2024-04-01) that Terraform uses
-          # to provision FC1 Flex Consumption function apps. The generic
-          # `az functionapp show` uses an older CLI-managed API version that may
-          # not return the `state` field for FC1 apps.
-          # Retry up to 5 times (30s total) to handle brief transitional states
-          # after a zip-package upload.
-          MAX_ATTEMPTS=5
-          state=""
-          for attempt in $(seq 1 $MAX_ATTEMPTS); do
-            raw=$(az rest \
-              --method GET \
-              --url "https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Web/sites/${APP}?api-version=2024-04-01" \
-              2>&1) && rc=0 || rc=$?
-            if [ $rc -ne 0 ]; then
-              echo "Attempt $attempt/$MAX_ATTEMPTS: az rest failed (exit $rc): $raw"
-            else
-              state=$(echo "$raw" | jq -r '.properties.state // ""' 2>/dev/null || echo "")
-              echo "Attempt $attempt/$MAX_ATTEMPTS: BC-02 function app state: ${state:-<unknown>}"
-              if [ "${state}" = "Running" ]; then
-                break
-              fi
-            fi
-            [ $attempt -lt $MAX_ATTEMPTS ] && sleep 10
-          done
-          if [ "${state}" != "Running" ]; then
-            echo "Smoke test FAILED — BC-02 function app is not in Running state after retries (state=${state:-<unknown>})."
+          SB_NAMESPACE=$(echo "$RG" | sed 's/-rg$//')-bus
+          SB_QUEUE="sb-queue-video-discovered"
+          MESSAGE_ID=$(python3 -c "import uuid; print(str(uuid.uuid4()))")
+          echo "Sending smoke message to $SB_NAMESPACE/$SB_QUEUE (message-id: $MESSAGE_ID)"
+          cat > /tmp/smoke-message.json << 'ENDJSON'
+          {"search_job_id": "d4ee9c78-80c4-41d3-9283-1ba45a6ae030", "video_id": "J-QfkYusj-0", "occurred_at": "2026-04-22T21:27:29.466355+00:00", "metadata": {"title": "Gil Gomes 4 - Histórias Inéditas!", "description": "Gil Gomes, o maior contador de histórias do radio brasileiro\nA vida como ela é, sem retoques.", "channel_id": "UCLE6H-xQnEx4U4PBsjht_SA", "channel_title": "peri lobo", "published_at": "2022-02-17T16:02:28+00:00", "duration": "PT11M12S", "view_count": 16155, "like_count": 561, "thumbnails": {"default": {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/default.jpg", "width": 120, "height": 90}, "medium": {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/mqdefault.jpg", "width": 320, "height": 180}, "high": {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/hqdefault.jpg", "width": 480, "height": 360}, "standard": {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/sddefault.jpg", "width": 640, "height": 480}}, "tags": null, "category_id": "25", "default_language": "pt-PT"}}
+          ENDJSON
+          if ! az servicebus message send \
+            --namespace-name "$SB_NAMESPACE" \
+            --queue-name "$SB_QUEUE" \
+            --auth-type login \
+            --message-id "$MESSAGE_ID" \
+            --body "$(cat /tmp/smoke-message.json)"; then
+            echo "FAILED — could not send smoke message to Service Bus queue."
             exit 1
           fi
-          echo "Smoke test PASSED — BC-02 function app is Running."
+          echo "Smoke message sent successfully (message-id: $MESSAGE_ID)."
 
-      - name: Verify BC-02 blob output (end-to-end check)
-        env:
-          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+      - name: Smoke test BC-02 blob output (end-to-end)
         run: |
-          if [ -z "$AZURE_STORAGE_ACCOUNT" ]; then
-            echo "::warning::AZURE_STORAGE_ACCOUNT not set — skipping BC-02 blob check."
-            exit 0
-          fi
-          # Poll raw-videos container for up to 90s to give Service Bus and BC-02 time to process.
-          # A blob count > 0 (from any previous run) confirms BC-02 is wired and writing artifacts.
-          echo "Polling raw-videos container for BC-02 artifacts (up to 90s)..."
+          RG="${{ env.RESOURCE_GROUP }}"
+          STORAGE_ACCOUNT=$(echo "$RG" | sed 's/-rg$//' | tr -d '-')sa
+          VIDEO_ID="J-QfkYusj-0"
+          echo "Polling raw-videos container for blob prefix $VIDEO_ID (up to 90s)..."
           found=0
           for i in $(seq 1 9); do
             count=$(az storage blob list \
-              --account-name "$AZURE_STORAGE_ACCOUNT" \
+              --account-name "$STORAGE_ACCOUNT" \
               --container-name raw-videos \
               --auth-mode login \
+              --prefix "$VIDEO_ID" \
               --query "length(@)" -o tsv 2>/dev/null || echo "0")
-            echo "Attempt $i/9: raw-videos blob count = $count"
+            echo "Attempt $i/9: raw-videos blobs for $VIDEO_ID = $count"
             if [ "${count:-0}" -gt 0 ]; then
               found=1
               break
             fi
             sleep 10
           done
-          if [ "$found" -eq 1 ]; then
-            echo "BC-02 end-to-end verified — artifacts present in raw-videos container."
-          else
-            echo "::warning::No blobs found in raw-videos after 90s. BC-02 may not have processed any events yet (first run or 'smoke-test' keyword returned no videos)."
+          if [ "$found" -ne 1 ]; then
+            echo "FAILED — no blob starting with $VIDEO_ID found in raw-videos after 90s."
+            exit 1
           fi
+          echo "Smoke test PASSED — BC-02 wrote raw-video artifact for $VIDEO_ID."
