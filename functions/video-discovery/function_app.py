@@ -1,4 +1,5 @@
 """Deployment wrapper for BC-01 Azure Function app."""
+# Deployed build: __BUILD_ID__
 
 from __future__ import annotations
 

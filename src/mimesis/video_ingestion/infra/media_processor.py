@@ -22,7 +22,7 @@ class YtDlpMediaProcessor(MediaProcessorPort):
         try:
             with TemporaryDirectory() as tmpdir:
                 ydl_opts: dict[str, object] = {
-                    "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                    "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
                     "outtmpl": str(Path(tmpdir) / "source.%(ext)s"),
                     "quiet": True,
                     "no_warnings": True,
