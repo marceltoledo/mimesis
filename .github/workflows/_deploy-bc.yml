@@ -26,10 +26,6 @@ on:
         required: true
         type: string
         description: "Azure resource group name (e.g. mimesis-dev-rg)"
-      function_app_name:
-        required: true
-        type: string
-        description: "Azure Function App resource name to deploy to"
 
 # OIDC token required for azure/login federated credential auth.
 # contents:read required to check out the repository.
@@ -63,6 +59,30 @@ jobs:
           if [ "$missing" -ne 0 ]; then
             exit 1
           fi
+
+      # Resolve the Function App name from the bc_id → secret mapping.
+      # secrets: inherit passes all caller secrets; we select the right one here
+      # rather than passing secrets as inputs (unsupported context in with: blocks).
+      - name: Resolve function app name
+        id: fa-name
+        env:
+          FA_BC01: ${{ secrets.AZURE_BC01_FUNCTION_APP_NAME }}
+          FA_BC02: ${{ secrets.AZURE_BC02_FUNCTION_APP_NAME }}
+        run: |
+          case "${{ inputs.bc_id }}" in
+            BC-01) FA_NAME="$FA_BC01" ;;
+            BC-02) FA_NAME="$FA_BC02" ;;
+            *)
+              echo "Unknown bc_id: ${{ inputs.bc_id }}" >&2
+              exit 1
+              ;;
+          esac
+          if [ -z "$FA_NAME" ]; then
+            echo "Function app name is empty for ${{ inputs.bc_id }} — check repository secrets." >&2
+            exit 1
+          fi
+          echo "::add-mask::$FA_NAME"
+          echo "name=$FA_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -109,7 +129,7 @@ jobs:
       - name: Deploy ${{ inputs.bc_id }} to ${{ inputs.deploy_container }}
         env:
           RG: ${{ inputs.resource_group }}
-          APP: ${{ inputs.function_app_name }}
+          APP: ${{ steps.fa-name.outputs.name }}
           SUB: ${{ env.AZURE_SUBSCRIPTION_ID }}
           CONTAINER: ${{ inputs.deploy_container }}
         run: |

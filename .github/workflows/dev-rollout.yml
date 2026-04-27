@@ -38,7 +38,6 @@ jobs:
       source_dir: "functions/video-discovery"
       deploy_container: "fn-fd-deploy"
       resource_group: "mimesis-dev-rg"
-      function_app_name: ${{ secrets.AZURE_BC01_FUNCTION_APP_NAME }}
     secrets: inherit
 
   # ── 2b. Deploy BC-02 (runs in parallel with BC-01 after Terraform) ───────────
@@ -51,7 +50,6 @@ jobs:
       source_dir: "functions/video-ingestion"
       deploy_container: "fn-fi-deploy"
       resource_group: "mimesis-dev-rg"
-      function_app_name: ${{ secrets.AZURE_BC02_FUNCTION_APP_NAME }}
     secrets: inherit
 
   # ── 3a. Smoke BC-01 (runs after BC-01 deploy; independent of BC-02 smoke) ───
