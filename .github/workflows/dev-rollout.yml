@@ -1,15 +1,5 @@
 name: DEV Rollout
 
-# Orchestrator: full DEV deployment chain.
-# Stages run in dependency order; BC-01 and BC-02 deploys run in PARALLEL
-# after Terraform completes.
-#
-# Job dependency graph:
-#   terraform-dev
-#       ├── deploy-bc01-dev ──► smoke-bc01-dev
-#       └── deploy-bc02-dev ──► smoke-bc02-dev
-#                                    ├── smoke-sb-send
-#                                    └── smoke-blob-poll (needs: smoke-sb-send)
 on:
   workflow_dispatch:
 
@@ -22,50 +12,55 @@ permissions:
 jobs:
   # ── 1. Terraform: provision / update DEV infrastructure ─────────────────────
   terraform-dev:
+    name: Terraform DEV
     uses: ./.github/workflows/_tf-apply.yml
     with:
-      env: "dev"
-      resource_group: "mimesis-dev-rg"
+      env: dev
+      resource_group: mimesis-dev-rg
     secrets: inherit
 
-  # ── 2a. Deploy BC-01 (runs in parallel with BC-02 after Terraform) ───────────
+  # ── 2. Deploy BC-01 and BC-02 in parallel after Terraform ───────────────────
   deploy-bc01-dev:
+    name: Deploy BC-01 DEV
     needs: terraform-dev
     uses: ./.github/workflows/_deploy-bc.yml
     with:
-      env: "dev"
-      bc_id: "BC-01"
-      source_dir: "functions/video-discovery"
-      deploy_container: "fn-fd-deploy"
-      resource_group: "mimesis-dev-rg"
+      env: dev
+      bc_id: BC-01
+      source_dir: functions/video-discovery
+      deploy_container: fn-fd-deploy
+      resource_group: mimesis-dev-rg
+      function_app_name: ${{ secrets.AZURE_BC01_FUNCTION_APP_NAME }}
     secrets: inherit
 
-  # ── 2b. Deploy BC-02 (runs in parallel with BC-01 after Terraform) ───────────
   deploy-bc02-dev:
+    name: Deploy BC-02 DEV
     needs: terraform-dev
     uses: ./.github/workflows/_deploy-bc.yml
     with:
-      env: "dev"
-      bc_id: "BC-02"
-      source_dir: "functions/video-ingestion"
-      deploy_container: "fn-fi-deploy"
-      resource_group: "mimesis-dev-rg"
+      env: dev
+      bc_id: BC-02
+      source_dir: functions/video-ingestion
+      deploy_container: fn-fi-deploy
+      resource_group: mimesis-dev-rg
+      function_app_name: ${{ secrets.AZURE_BC02_FUNCTION_APP_NAME }}
     secrets: inherit
 
-  # ── 3a. Smoke BC-01 (runs after BC-01 deploy; independent of BC-02 smoke) ───
+  # ── 3. Smoke tests run independently after their respective deploy ───────────
   smoke-bc01-dev:
+    name: Smoke BC-01 DEV
     needs: deploy-bc01-dev
     uses: ./.github/workflows/_smoke-bc01.yml
     with:
-      env: "dev"
-      resource_group: "mimesis-dev-rg"
+      env: dev
+      resource_group: mimesis-dev-rg
     secrets: inherit
 
-  # ── 3b. Smoke BC-02 (runs after BC-02 deploy; independent of BC-01 smoke) ───
   smoke-bc02-dev:
+    name: Smoke BC-02 DEV
     needs: deploy-bc02-dev
     uses: ./.github/workflows/_smoke-bc02.yml
     with:
-      env: "dev"
-      resource_group: "mimesis-dev-rg"
+      env: dev
+      resource_group: mimesis-dev-rg
     secrets: inherit

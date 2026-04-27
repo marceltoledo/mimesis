@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../firefox_cookie_exporter_cli"
+		}
+	],
+	"settings": {}
+}

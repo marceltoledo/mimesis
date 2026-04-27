@@ -146,6 +146,48 @@ These ADRs apply to **all** bounded contexts and must not be re-litigated per co
 
 ---
 
+## CI/CD Pipeline Architecture
+
+### Workflow Layout
+
+All GitHub Actions workflows live in `.github/workflows/`. Files with an `_` prefix are reusable (`workflow_call`) only; files without a prefix are top-level entrypoints.
+
+```
+_tf-apply.yml           — Reusable: Terraform init → plan → apply
+_deploy-bc.yml          — Reusable: Package + blob-upload a single BC (owns its own pip install)
+_smoke-bc01.yml         — Reusable: BC-01 HTTP endpoint smoke test
+_smoke-bc02.yml         — Reusable: BC-02 two-job smoke (smoke-sb-send → smoke-blob-poll)
+dev-rollout.yml         — Orchestrator: DEV full chain
+dev-smoke.yml           — Thin dispatcher: BC-01 + BC-02 smoke in parallel for env=dev
+lint-test.yml           — Python lint + unit tests
+terraform-validate.yml  — Terraform fmt + validate
+create-issue-branch.yml — Auto-creates feature branches from issues
+```
+
+### Job Dependency Graph (dev-rollout.yml)
+
+```
+terraform-dev
+    ├── deploy-bc01-dev  ──► smoke-bc01-dev
+    └── deploy-bc02-dev  ──► smoke-bc02-dev
+                                 ├── smoke-sb-send
+                                 └── smoke-blob-poll (needs: smoke-sb-send)
+```
+
+BC-01 and BC-02 deploy **in parallel** after Terraform completes. Smoke jobs are independent of each other, so a BC-02 blob-poll timeout does not block BC-01 result visibility.
+
+### CI Architecture Decision Records
+
+| ADR | Decision | Rationale |
+|---|---|---|
+| ADR-CI-01 | `workflow_call` reusable workflows over copy-paste or job matrix | Enables independent re-run of any stage; eliminates duplication for PROD |
+| ADR-CI-02 | `_` prefix for reusable files | Visually distinguishes entrypoints from reusable building blocks |
+| ADR-CI-03 | BC-02 smoke split into `smoke-sb-send` + `smoke-blob-poll` jobs | Independent visibility of SB send vs 90-second blob poll |
+| ADR-CI-04 | PROD Terraform runs in its own job | Supports environment protection rules and `required_reviewers` gate before apply |
+| ADR-CI-05 | `_deploy-bc.yml` owns its own `pip install` | No hidden dependency coupling between BC build artefacts |
+
+---
+
 ## Domain Event Catalogue
 
 | Event | Producer BC | Consumer BC | Service Bus Queue | Schema Version |
