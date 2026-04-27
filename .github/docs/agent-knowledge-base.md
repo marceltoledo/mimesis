@@ -24,6 +24,21 @@ This document captures durable operational learnings for repository agents.
 
 ## GitHub Actions
 
+### Workflow layout
+
+The pipeline uses reusable (`workflow_call`) workflows with an `_` prefix. The canonical layout is:
+
+```
+_tf-apply.yml        — Terraform init → plan → apply (parameterised by env)
+_deploy-bc.yml       — Package + blob-upload a single BC (owns its own pip install)
+_smoke-bc01.yml      — BC-01 HTTP endpoint smoke test
+_smoke-bc02.yml      — BC-02 two-job smoke: smoke-sb-send → smoke-blob-poll
+dev-rollout.yml      — Orchestrator: terraform-dev → [deploy-bc01-dev ‖ deploy-bc02-dev] → [smoke-bc01-dev ‖ smoke-bc02-dev]
+dev-smoke.yml        — Thin dispatcher: smoke-bc01 ‖ smoke-bc02 with env=dev
+```
+
+BC-01 and BC-02 deploy **in parallel** after Terraform. Each smoke job is independent. When adding PROD support, create `prod-rollout.yml` calling the same reusable workflows — no YAML logic duplication.
+
 ### Empty `env:` block
 - GitHub Actions rejects a top-level `env:` key whose value contains **only comments** — YAML parses it as a null mapping, which GHA treats as an invalid value.
 - **Always remove** unused `env:` blocks entirely. Do not leave comment-only stubs.

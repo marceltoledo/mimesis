@@ -36,6 +36,8 @@ This file contains:
 
 Also read the existing workflow files in `.github/workflows/` before authoring a new step or workflow — understand naming conventions, job structure, environment references, and secret names already in use.
 
+> **Workflow layout (current)** — see the Workflow Layout section below for the canonical file list and calling conventions before touching any `.github/workflows/` file.
+
 ---
 
 ## Mode A — Pipeline Authoring
@@ -119,6 +121,87 @@ resource "azurerm_monitor_metric_alert" "dlq_age_critical" {
 }
 ```
 
+---
+
+## Workflow Layout
+
+All workflow files live in `.github/workflows/`. The `_` prefix marks reusable (`workflow_call`) files; files without a prefix are top-level entrypoints.
+
+```
+.github/workflows/
+  _tf-apply.yml           # Reusable: Terraform init → plan → apply
+  _deploy-bc.yml          # Reusable: Package + blob-upload a single BC (owns its own pip install)
+  _smoke-bc01.yml         # Reusable: BC-01 HTTP endpoint smoke test
+  _smoke-bc02.yml         # Reusable: BC-02 two-job smoke (smoke-sb-send → smoke-blob-poll)
+  dev-rollout.yml         # Orchestrator: DEV full chain
+  dev-smoke.yml           # Thin dispatcher: calls _smoke-bc01 + _smoke-bc02 with env=dev
+  lint-test.yml           # Python lint + unit tests
+  terraform-validate.yml  # Terraform fmt + validate
+  create-issue-branch.yml # Auto-creates feature branches from issues
+```
+
+### Job Dependency Graph (dev-rollout.yml)
+
+```
+terraform-dev
+    ├── deploy-bc01-dev  ──► smoke-bc01-dev
+    └── deploy-bc02-dev  ──► smoke-bc02-dev
+                                 ├── smoke-sb-send
+                                 └── smoke-blob-poll (needs: smoke-sb-send)
+```
+
+BC-01 and BC-02 deploy **in parallel** after Terraform. Smoke jobs are independent of each other.
+
+### Reusable Workflow Contracts
+
+#### `_tf-apply.yml`
+| Input | Type | Required | Description |
+|---|---|---|---|
+| `env` | string | yes | `dev` or `prod` |
+| `resource_group` | string | yes | e.g. `mimesis-dev-rg` |
+
+#### `_deploy-bc.yml`
+| Input | Type | Required | Description |
+|---|---|---|---|
+| `env` | string | yes | `dev` or `prod` |
+| `bc_id` | string | yes | `BC-01` or `BC-02` (display only) |
+| `source_dir` | string | yes | `functions/video-discovery` or `functions/video-ingestion` |
+| `deploy_container` | string | yes | `fn-fd-deploy` or `fn-fi-deploy` |
+| `resource_group` | string | yes | e.g. `mimesis-dev-rg` |
+| `function_app_name` | string | yes | Azure Function App name (from secret) |
+
+`_deploy-bc.yml` owns its own `pip install --target=.python_packages .` — no shared install step in the orchestrator.
+
+#### `_smoke-bc01.yml`
+| Input | Type | Required | Description |
+|---|---|---|---|
+| `env` | string | yes | `dev` or `prod` |
+| `resource_group` | string | yes | e.g. `mimesis-dev-rg` |
+
+#### `_smoke-bc02.yml`
+| Input | Type | Required | Description |
+|---|---|---|---|
+| `env` | string | yes | `dev` or `prod` |
+| `resource_group` | string | yes | e.g. `mimesis-dev-rg` |
+
+Two internal jobs: `smoke-sb-send` → `smoke-blob-poll`.
+
+### Architecture Decision Records (CI)
+
+| ADR | Decision |
+|---|---|
+| ADR-CI-01 | `workflow_call` reusable workflows over copy-paste or job matrix |
+| ADR-CI-02 | `_` prefix for reusable files (convention, not enforced by GitHub) |
+| ADR-CI-03 | BC-02 smoke split into two jobs for independent visibility of SB send vs blob poll |
+| ADR-CI-04 | PROD has its own Terraform job (not shared with DEV) to support environment protection rules |
+| ADR-CI-05 | `_deploy-bc.yml` owns its own `pip install` — no shared build artefact between BCs |
+
+### Adding a New Environment (e.g. prod)
+
+Create `prod-rollout.yml` calling the same reusable workflows with `env: prod` and `resource_group: mimesis-prod-rg`. No logic duplication required.
+
+---
+
 ### New Workflow Checklist
 
 Before opening a PR with a new or modified workflow file:
@@ -128,6 +211,8 @@ Before opening a PR with a new or modified workflow file:
 - [ ] `terraform init` in CI does **not** use `-upgrade`
 - [ ] End-to-end validation steps use retry loops with `::warning::` for cold-start tolerance
 - [ ] Workflow linted locally with `act --dry-run` or YAML validated manually
+- [ ] New reusable files use `_` prefix and `workflow_call` trigger only
+- [ ] New entrypoint files call reusable workflows via `uses:` with `secrets: inherit`
 
 ---
 
