@@ -51,3 +51,37 @@ jobs:
         with:
           files: ./coverage.xml
         continue-on-error: true  # Do not block CI on coverage upload failures
+
+  media-processor-integration:
+    name: Media processor integration (YouTube download)
+    runs-on: ubuntu-latest
+    # Only run on pushes to main — these tests download real videos (~150 MB each)
+    # and are too slow to run on every PR.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package and dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Install ffmpeg (required by pydub)
+        run: sudo apt-get install -y ffmpeg
+
+      - name: Run media processor integration tests
+        run: pytest tests/unit/test_media_processor.py -m integration -v
+
+      - name: Upload downloaded videos as artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-processor-downloads
+          path: tests/downloads/
+          if-no-files-found: warn
+          retention-days: 1

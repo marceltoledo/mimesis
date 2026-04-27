@@ -4,9 +4,7 @@ name: Smoke BC-02 (reusable)
 # Job 1 (smoke-sb-send): sends a synthetic VideoDiscovered message to the
 #   Service Bus queue that BC-02 consumes.
 # Job 2 (smoke-blob-poll): polls the raw-videos blob container for up to 90 s
-#   to confirm BC-02 wrote the output artifact. Issues a ::warning:: (not a
-#   hard failure) if no blob is found — on first-ever runs the function app
-#   may not have processed the message yet.
+#   to confirm BC-02 wrote the output artifact. Fails hard if no blob is found.
 # Called by orchestrator workflows (e.g. dev-rollout.yml, dev-smoke.yml).
 on:
   workflow_call:
@@ -137,8 +135,8 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
-      # Poll for up to 90 s (9 × 10 s). Issue ::warning:: rather than hard-fail
-      # on first-ever runs where BC-02 may not have settled the message yet.
+      # Poll for up to 90 s (9 × 10 s). Fail the job if no blob is found —
+      # confirms BC-02 processed the message and wrote the output artifact.
       # Blobs are stored as raw-videos/{date}/{video_id}/source.mp4 — use
       # contains() to match the video_id anywhere in the blob name.
       - name: Poll raw-videos container for BC-02 blob output
@@ -165,5 +163,6 @@ jobs:
           if [ "$found" -eq 1 ]; then
             echo "BC-02 end-to-end verified — raw-video artifact found for $VIDEO_ID."
           else
-            echo "::warning::No blob found for $VIDEO_ID in raw-videos after 90s (first run or message not yet processed)."
+            echo "::error::No blob found for $VIDEO_ID in raw-videos after 90s — BC-02 did not write the expected artifact."
+            exit 1
           fi

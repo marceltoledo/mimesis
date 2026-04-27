@@ -30,7 +30,6 @@ jobs:
       source_dir: functions/video-discovery
       deploy_container: fn-fd-deploy
       resource_group: mimesis-dev-rg
-      function_app_name: ${{ secrets.AZURE_BC01_FUNCTION_APP_NAME }}
     secrets: inherit
 
   deploy-bc02-dev:
@@ -43,7 +42,6 @@ jobs:
       source_dir: functions/video-ingestion
       deploy_container: fn-fi-deploy
       resource_group: mimesis-dev-rg
-      function_app_name: ${{ secrets.AZURE_BC02_FUNCTION_APP_NAME }}
     secrets: inherit
 
   # ── 3. Smoke tests run independently after their respective deploy ───────────
