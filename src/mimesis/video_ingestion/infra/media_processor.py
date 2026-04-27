@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -11,6 +12,10 @@ from pydub import AudioSegment
 from mimesis.video_ingestion.domain.exceptions import MediaProcessingError
 from mimesis.video_ingestion.ports.media_processor_port import MediaProcessorPort
 
+logger = logging.getLogger(__name__)
+
+_FORMAT = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
+
 
 class YtDlpMediaProcessor(MediaProcessorPort):
     """Downloads source video and extracts MP3 audio using yt-dlp."""
@@ -19,19 +24,29 @@ class YtDlpMediaProcessor(MediaProcessorPort):
         self._cookies = cookies
 
     def download_source_video(self, youtube_url: str) -> bytes:
+        if self._cookies:
+            try:
+                return self._download(youtube_url, cookies=self._cookies)
+            except MediaProcessingError as exc:
+                logger.warning(
+                    "Download with cookies failed (%s) — retrying without cookies", exc
+                )
+        return self._download(youtube_url, cookies=None)
+
+    def _download(self, youtube_url: str, cookies: str | None) -> bytes:
         try:
             with TemporaryDirectory() as tmpdir:
                 ydl_opts: dict[str, object] = {
-                    "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+                    "format": _FORMAT,
                     "outtmpl": str(Path(tmpdir) / "source.%(ext)s"),
                     "quiet": True,
                     "no_warnings": True,
                     "merge_output_format": "mp4",
                 }
 
-                if self._cookies:
+                if cookies:
                     cookie_path = Path(tmpdir) / "cookies.txt"
-                    cookie_path.write_text(self._cookies)
+                    cookie_path.write_text(cookies)
                     ydl_opts["cookiefile"] = str(cookie_path)
 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
