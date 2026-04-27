@@ -2,9 +2,33 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from mimesis.video_ingestion.infra.media_processor import YtDlpMediaProcessor
+
+DOWNLOADS_DIR = Path(__file__).parent.parent / "downloads"
+
+
+@pytest.fixture(autouse=True, scope="module")
+def clean_downloads_dir() -> None:
+    """Remove and recreate tests/downloads/ before the test module runs."""
+    import shutil
+    if DOWNLOADS_DIR.exists():
+        shutil.rmtree(DOWNLOADS_DIR)
+    DOWNLOADS_DIR.mkdir()
+
+
+def _save_and_assert(video_bytes: bytes, video_id: str) -> Path:
+    """Save video bytes to tests/downloads/<video_id>.mp4 and assert file exists with content."""
+    DOWNLOADS_DIR.mkdir(exist_ok=True)
+    out_path = DOWNLOADS_DIR / f"{video_id}.mp4"
+    out_path.write_bytes(video_bytes)
+    assert out_path.exists(), f"Downloaded file not found on disk: {out_path}"
+    assert out_path.stat().st_size > 0, f"Downloaded file is empty on disk: {out_path}"
+    print(f"\nSaved: {out_path.resolve()} ({out_path.stat().st_size:,} bytes)")
+    return out_path
 
 
 @pytest.mark.integration
@@ -22,6 +46,7 @@ def test_download_source_video_real_video() -> None:
     result = processor.download_source_video("https://youtu.be/agvQadGZkqQ")
     assert isinstance(result, bytes)
     assert len(result) > 0
+    _save_and_assert(result, "agvQadGZkqQ")
 
 
 @pytest.mark.integration
@@ -39,3 +64,4 @@ def test_download_source_video_real_video_j_qfkyusj_0() -> None:
     result = processor.download_source_video("https://www.youtube.com/watch?v=J-QfkYusj-0")
     assert isinstance(result, bytes)
     assert len(result) > 0
+    _save_and_assert(result, "J-QfkYusj-0")
