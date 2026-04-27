@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import io
 import logging
+import os
+import stat
+import urllib.request
+import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -21,6 +26,45 @@ _FORMAT = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
 _NO_COOKIES_EXTRACTOR_ARGS: dict[str, object] = {
     "youtube": {"player_client": ["tv_embedded"]}
 }
+
+# Deno is required by yt-dlp to solve YouTube's n-challenge (throttle bypass).
+# Without it, cookie-authenticated downloads fail because the web client (the
+# only client that supports cookies in yt-dlp ≥2026) always triggers n-challenge.
+# We download Deno lazily to /tmp on first use; the binary persists for the
+# lifetime of the worker instance so subsequent invocations skip the download.
+_DENO_DIR = Path("/tmp/deno-runtime")
+_DENO_BIN = _DENO_DIR / "deno"
+_DENO_ZIP_URL = (
+    "https://github.com/denoland/deno/releases/download/v2.7.13"
+    "/deno-x86_64-unknown-linux-gnu.zip"
+)
+
+
+def _ensure_deno() -> None:
+    """Download Deno to /tmp and add to PATH so yt-dlp can solve n-challenge."""
+    if _DENO_BIN.exists():
+        _add_deno_to_path()
+        return
+    _DENO_DIR.mkdir(parents=True, exist_ok=True)
+    logger.info("Downloading Deno for n-challenge solving (~50 MB)…")
+    try:
+        with urllib.request.urlopen(_DENO_ZIP_URL, timeout=120) as resp:
+            zip_bytes = resp.read()
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            zf.extract("deno", str(_DENO_DIR))
+        _DENO_BIN.chmod(
+            _DENO_BIN.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+        )
+        _add_deno_to_path()
+        logger.info("Deno ready at %s", _DENO_BIN)
+    except Exception as exc:
+        logger.warning("Deno download failed (%s) — n-challenge may not be solved", exc)
+
+
+def _add_deno_to_path() -> None:
+    deno_dir = str(_DENO_DIR)
+    if deno_dir not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = f"{deno_dir}:{os.environ.get('PATH', '')}"
 
 
 class YtDlpMediaProcessor(MediaProcessorPort):
@@ -51,9 +95,14 @@ class YtDlpMediaProcessor(MediaProcessorPort):
                 }
 
                 if cookies:
+                    _ensure_deno()
                     cookie_path = Path(tmpdir) / "cookies.txt"
                     cookie_path.write_text(cookies)
                     ydl_opts["cookiefile"] = str(cookie_path)
+                    # Download yt-dlp's EJS challenge solver script from GitHub.
+                    # Required so Deno can solve the n-challenge that YouTube
+                    # issues for authenticated (cookie) requests.
+                    ydl_opts["remote_components"] = ["ejs:github"]
                 else:
                     ydl_opts["extractor_args"] = _NO_COOKIES_EXTRACTOR_ARGS
 
