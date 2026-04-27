@@ -23,9 +23,7 @@ _FORMAT = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
 
 # tv_embedded bypasses SABR streaming restriction and n-challenge JS requirement
 # when downloading without cookies, which is necessary from cloud server IPs.
-_NO_COOKIES_EXTRACTOR_ARGS: dict[str, object] = {
-    "youtube": {"player_client": ["tv_embedded"]}
-}
+_NO_COOKIES_EXTRACTOR_ARGS: dict[str, object] = {"youtube": {"player_client": ["tv_embedded"]}}
 
 # Deno is required by yt-dlp to solve YouTube's n-challenge (throttle bypass).
 # Without it, cookie-authenticated downloads fail because the web client (the
@@ -52,9 +50,7 @@ def _ensure_deno() -> None:
             zip_bytes = resp.read()
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             zf.extract("deno", str(_DENO_DIR))
-        _DENO_BIN.chmod(
-            _DENO_BIN.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
-        )
+        _DENO_BIN.chmod(_DENO_BIN.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
         _add_deno_to_path()
         logger.info("Deno ready at %s", _DENO_BIN)
     except Exception as exc:
@@ -78,9 +74,7 @@ class YtDlpMediaProcessor(MediaProcessorPort):
             try:
                 return self._download(youtube_url, cookies=self._cookies)
             except MediaProcessingError as exc:
-                logger.warning(
-                    "Download with cookies failed (%s) — retrying without cookies", exc
-                )
+                logger.warning("Download with cookies failed (%s) — retrying without cookies", exc)
         return self._download(youtube_url, cookies=None)
 
     def _download(self, youtube_url: str, cookies: str | None) -> bytes:

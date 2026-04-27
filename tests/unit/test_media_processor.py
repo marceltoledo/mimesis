@@ -15,6 +15,7 @@ DOWNLOADS_DIR = Path(__file__).parent.parent / "downloads"
 def clean_downloads_dir() -> None:
     """Remove and recreate tests/downloads/ before the test module runs."""
     import shutil
+
     if DOWNLOADS_DIR.exists():
         shutil.rmtree(DOWNLOADS_DIR)
     DOWNLOADS_DIR.mkdir()
