@@ -1,0 +1,27 @@
+name: DEV Smoke
+
+# Thin dispatcher: re-runs only the smoke stage for the DEV environment.
+# Calls both smoke reusable workflows in parallel — no deploy or Terraform.
+on:
+  workflow_dispatch:
+
+# OIDC token required for azure/login federated credential auth.
+# contents:read required to check out the repository.
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  smoke-bc01:
+    uses: ./.github/workflows/_smoke-bc01.yml
+    with:
+      env: "dev"
+      resource_group: "mimesis-dev-rg"
+    secrets: inherit
+
+  smoke-bc02:
+    uses: ./.github/workflows/_smoke-bc02.yml
+    with:
+      env: "dev"
+      resource_group: "mimesis-dev-rg"
+    secrets: inherit

@@ -1,0 +1,169 @@
+name: Smoke BC-02 (reusable)
+
+# Reusable workflow: end-to-end smoke test for BC-02 (Video Ingestion).
+# Job 1 (smoke-sb-send): sends a synthetic VideoDiscovered message to the
+#   Service Bus queue that BC-02 consumes.
+# Job 2 (smoke-blob-poll): polls the raw-videos blob container for up to 90 s
+#   to confirm BC-02 wrote the output artifact. Issues a ::warning:: (not a
+#   hard failure) if no blob is found — on first-ever runs the function app
+#   may not have processed the message yet.
+# Called by orchestrator workflows (e.g. dev-rollout.yml, dev-smoke.yml).
+on:
+  workflow_call:
+    inputs:
+      env:
+        required: true
+        type: string
+        description: "Target environment: dev or prod"
+      resource_group:
+        required: true
+        type: string
+        description: "Azure resource group name (e.g. mimesis-dev-rg)"
+
+# OIDC token required for azure/login federated credential auth.
+# contents:read required to check out the repository.
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # ── Job 1: Send a synthetic VideoDiscovered message to Service Bus ───────────
+  smoke-sb-send:
+    name: Smoke BC-02 — SB send (${{ inputs.env }})
+    runs-on: ubuntu-latest
+    # Environment protection rules apply here.
+    environment: ${{ inputs.env }}
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_BC02_FUNCTION_APP_NAME: ${{ secrets.AZURE_BC02_FUNCTION_APP_NAME }}
+      RESOURCE_GROUP: ${{ inputs.resource_group }}
+
+    steps:
+      - name: Preflight required smoke inputs
+        run: |
+          missing=0
+          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_BC02_FUNCTION_APP_NAME; do
+            if [ -z "${!var}" ]; then
+              echo "Missing required value: $var (set as repository secret or variable)"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install azure-servicebus SDK
+        run: pip install azure-servicebus azure-identity --quiet
+
+      # Send a synthetic VideoDiscovered message so BC-02 has something to process.
+      # Uses DefaultAzureCredential (backed by the OIDC login above).
+      - name: Send smoke message to Service Bus
+        run: |
+          RG="${{ inputs.resource_group }}"
+          python3 << 'PYEOF'
+          import os, uuid, json, sys
+          from azure.servicebus import ServiceBusClient, ServiceBusMessage
+          from azure.identity import DefaultAzureCredential
+
+          rg = os.environ["RESOURCE_GROUP"]
+          namespace = rg.replace("-rg", "") + "-bus" + ".servicebus.windows.net"
+          queue = "sb-queue-video-discovered"
+          message_id = str(uuid.uuid4())
+
+          body = json.dumps({
+            "search_job_id": "d4ee9c78-80c4-41d3-9283-1ba45a6ae030",
+            "video_id": "J-QfkYusj-0",
+            "occurred_at": "2026-04-22T21:27:29.466355+00:00",
+            "metadata": {
+              "title": "Gil Gomes 4 - Histórias Inéditas!",
+              "description": "Gil Gomes, o maior contador de histórias do radio brasileiro\nA vida como ela é, sem retoques.",
+              "channel_id": "UCLE6H-xQnEx4U4PBsjht_SA",
+              "channel_title": "peri lobo",
+              "published_at": "2022-02-17T16:02:28+00:00",
+              "duration": "PT11M12S",
+              "view_count": 16155,
+              "like_count": 561,
+              "thumbnails": {
+                "default":  {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/default.jpg",  "width": 120, "height": 90},
+                "medium":   {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/mqdefault.jpg","width": 320, "height": 180},
+                "high":     {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/hqdefault.jpg","width": 480, "height": 360},
+                "standard": {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/sddefault.jpg","width": 640, "height": 480}
+              },
+              "tags": None,
+              "category_id": "25",
+              "default_language": "pt-PT"
+            }
+          })
+
+          print(f"Sending smoke message to {namespace}/{queue} (message-id: {message_id})")
+          try:
+            credential = DefaultAzureCredential()
+            with ServiceBusClient(namespace, credential) as client:
+              with client.get_queue_sender(queue) as sender:
+                sender.send_messages(ServiceBusMessage(body=body, message_id=message_id))
+            print(f"Smoke message sent successfully (message-id: {message_id}).")
+          except Exception as exc:
+            print(f"FAILED — could not send smoke message to Service Bus queue: {exc}", file=sys.stderr)
+            sys.exit(1)
+          PYEOF
+
+  # ── Job 2: Poll raw-videos container for the output artifact ────────────────
+  smoke-blob-poll:
+    name: Smoke BC-02 — blob poll (${{ inputs.env }})
+    runs-on: ubuntu-latest
+    needs: smoke-sb-send
+    # Environment protection rules apply here. Jobs don't share credentials —
+    # each job requires its own Azure Login.
+    environment: ${{ inputs.env }}
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    steps:
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      # Poll for up to 90 s (9 × 10 s). Issue ::warning:: rather than hard-fail
+      # on first-ever runs where BC-02 may not have settled the message yet.
+      # Blobs are stored as raw-videos/{date}/{video_id}/source.mp4 — use
+      # contains() to match the video_id anywhere in the blob name.
+      - name: Poll raw-videos container for BC-02 blob output
+        env:
+          RESOURCE_GROUP: ${{ inputs.resource_group }}
+        run: |
+          STORAGE_ACCOUNT=$(echo "$RESOURCE_GROUP" | sed 's/-rg$//' | tr -d '-')sa
+          VIDEO_ID="J-QfkYusj-0"
+          echo "Polling raw-videos container for blob containing $VIDEO_ID (up to 90s)..."
+          found=0
+          for i in $(seq 1 9); do
+            count=$(az storage blob list \
+              --account-name "$STORAGE_ACCOUNT" \
+              --container-name raw-videos \
+              --auth-mode login \
+              --query "length([?contains(name, '$VIDEO_ID')])" -o tsv 2>/dev/null || echo "0")
+            echo "Attempt $i/9: raw-videos blobs for $VIDEO_ID = $count"
+            if [ "${count:-0}" -gt 0 ]; then
+              found=1
+              break
+            fi
+            sleep 10
+          done
+          if [ "$found" -eq 1 ]; then
+            echo "BC-02 end-to-end verified — raw-video artifact found for $VIDEO_ID."
+          else
+            echo "::warning::No blob found for $VIDEO_ID in raw-videos after 90s (first run or message not yet processed)."
+          fi

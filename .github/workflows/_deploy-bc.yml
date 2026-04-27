@@ -1,0 +1,160 @@
+name: Deploy BC (reusable)
+
+# Reusable workflow: package a single Bounded Context function app and deploy
+# it to Azure Blob Storage for Flex Consumption (FC1) pickup.
+# Called by orchestrator workflows (e.g. dev-rollout.yml).
+on:
+  workflow_call:
+    inputs:
+      env:
+        required: true
+        type: string
+        description: "Target environment: dev or prod"
+      bc_id:
+        required: true
+        type: string
+        description: "Bounded context identifier for display (e.g. BC-01)"
+      source_dir:
+        required: true
+        type: string
+        description: "Source directory to package (e.g. functions/video-discovery)"
+      deploy_container:
+        required: true
+        type: string
+        description: "Blob container for the deployment package (e.g. fn-fd-deploy)"
+      resource_group:
+        required: true
+        type: string
+        description: "Azure resource group name (e.g. mimesis-dev-rg)"
+
+# OIDC token required for azure/login federated credential auth.
+# contents:read required to check out the repository.
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-bc:
+    name: Deploy ${{ inputs.bc_id }} (${{ inputs.source_dir }})
+    runs-on: ubuntu-latest
+    # Environment protection rules apply here.
+    environment: ${{ inputs.env }}
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight required deploy inputs
+        run: |
+          missing=0
+          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+            if [ -z "${!var}" ]; then
+              echo "Missing required value: $var (set as repository secret or variable)"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      # Resolve the Function App name from the bc_id → secret mapping.
+      # secrets: inherit passes all caller secrets; we select the right one here
+      # rather than passing secrets as inputs (unsupported context in with: blocks).
+      - name: Resolve function app name
+        id: fa-name
+        env:
+          FA_BC01: ${{ secrets.AZURE_BC01_FUNCTION_APP_NAME }}
+          FA_BC02: ${{ secrets.AZURE_BC02_FUNCTION_APP_NAME }}
+        run: |
+          case "${{ inputs.bc_id }}" in
+            BC-01) FA_NAME="$FA_BC01" ;;
+            BC-02) FA_NAME="$FA_BC02" ;;
+            *)
+              echo "Unknown bc_id: ${{ inputs.bc_id }}" >&2
+              exit 1
+              ;;
+          esac
+          if [ -z "$FA_NAME" ]; then
+            echo "Function app name is empty for ${{ inputs.bc_id }} — check repository secrets." >&2
+            exit 1
+          fi
+          echo "::add-mask::$FA_NAME"
+          echo "name=$FA_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Pre-install all package dependencies so the ZIP contains everything the
+      # Azure Functions runtime needs without a remote build step.
+      # Each reusable deploy job owns its own install — no shared step.
+      - name: Install package dependencies for deployment
+        run: |
+          pip install \
+            --target=".python_packages/lib/site-packages" \
+            --upgrade \
+            .
+
+      # Copy function source + pre-installed deps into a staging directory,
+      # stamp the build ID into function_app.py, then create the deployment ZIP.
+      - name: Package ${{ inputs.bc_id }} (${{ inputs.source_dir }})
+        run: |
+          mkdir -p staging
+          cp -r ${{ inputs.source_dir }}/. staging/
+          cp -r .python_packages staging/
+          # Stamp the build ID into the wrapper so the deployed file is self-describing.
+          sed -i "s/__BUILD_ID__/${GITHUB_SHA::8}-${GITHUB_RUN_NUMBER}/g" staging/function_app.py
+          cd staging
+          zip -r ../deploy.zip . \
+            --exclude "*.pyc" \
+            --exclude "*/__pycache__/*"
+
+      # Deploy by direct blob upload — bypasses the SCM/Kudu endpoint entirely
+      # (which returns 502 on Flex Consumption apps).
+      #
+      # Strategy: overwrite released-package.zip (the well-known fallback the
+      # FC1 runtime reads on cold-start when ResultPackagePath is null) then
+      # stop+start to force a fresh cold-start.
+      - name: Deploy ${{ inputs.bc_id }} to ${{ inputs.deploy_container }}
+        env:
+          RG: ${{ inputs.resource_group }}
+          APP: ${{ steps.fa-name.outputs.name }}
+          SUB: ${{ env.AZURE_SUBSCRIPTION_ID }}
+          CONTAINER: ${{ inputs.deploy_container }}
+        run: |
+          # Derive storage account name from resource group (mimesis-dev-rg → mimesisdevsa)
+          STORAGE_ACCOUNT=$(echo "$RG" | sed 's/-rg$//' | tr -d '-')sa
+
+          echo "Storage account    : $STORAGE_ACCOUNT"
+          echo "Deployment container: $CONTAINER"
+
+          # 1. Overwrite the well-known released-package.zip so the runtime
+          #    always picks up new code on the next cold-start.
+          az storage blob upload \
+            --account-name "$STORAGE_ACCOUNT" \
+            --container-name "$CONTAINER" \
+            --name released-package.zip \
+            --file deploy.zip \
+            --overwrite \
+            --auth-mode key
+
+          # 2. Force a true cold-start (stop+start; restart keeps warm workers)
+          az functionapp stop --name "$APP" --resource-group "$RG"
+          az functionapp start --name "$APP" --resource-group "$RG"
+
+          # 3. Notify the platform of updated triggers (best-effort — host may
+          #    still be starting up after functionapp start, so allow failure).
+          az rest --method post \
+            --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$APP/syncfunctiontriggers?api-version=2024-04-01" \
+            || true

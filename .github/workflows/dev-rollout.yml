@@ -1,5 +1,15 @@
 name: DEV Rollout
 
+# Orchestrator: full DEV deployment chain.
+# Stages run in dependency order; BC-01 and BC-02 deploys run in PARALLEL
+# after Terraform completes.
+#
+# Job dependency graph:
+#   terraform-dev
+#       ├── deploy-bc01-dev ──► smoke-bc01-dev
+#       └── deploy-bc02-dev ──► smoke-bc02-dev
+#                                    ├── smoke-sb-send
+#                                    └── smoke-blob-poll (needs: smoke-sb-send)
 on:
   workflow_dispatch:
 
@@ -9,384 +19,53 @@ permissions:
   id-token: write
   contents: read
 
-env:
-  TF_WORKING_DIR: infrastructure/terraform
-  # Deterministic DEV resource group derived from Terraform locals:
-  # prefix = "mimesis-dev", rg = "mimesis-dev-rg"
-  RESOURCE_GROUP: mimesis-dev-rg
-
 jobs:
   # ── 1. Terraform: provision / update DEV infrastructure ─────────────────────
   terraform-dev:
-    name: Terraform DEV (init → plan → apply)
-    runs-on: ubuntu-latest
-    environment: dev
-    env:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      ARM_USE_OIDC: true
-      ARM_USE_AZUREAD: true
-      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    uses: ./.github/workflows/_tf-apply.yml
+    with:
+      env: "dev"
+      resource_group: "mimesis-dev-rg"
+    secrets: inherit
 
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Preflight required Azure inputs
-        run: |
-          missing=0
-          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
-            if [ -z "${!var}" ]; then
-              echo "Missing required value: $var (set as repository secret or variable)"
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            exit 1
-          fi
-
-      - name: Azure Login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "~1.7"
-
-      - name: Terraform Init
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init -backend-config=backend.hcl
-
-      - name: Terraform Plan
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        env:
-          TF_VAR_youtube_api_key: ${{ secrets.AZURE_YOUTUBE_API_KEY }}
-        run: |
-          terraform plan \
-            -var-file=dev.tfvars \
-            -out=tfplan
-
-      - name: Terraform Apply
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        env:
-          TF_VAR_youtube_api_key: ${{ secrets.AZURE_YOUTUBE_API_KEY }}
-        run: terraform apply -auto-approve tfplan
-
-  # ── 2. Deploy Function Apps ──────────────────────────────────────────────────
-  deploy-functions-dev:
-    name: Deploy Function Apps DEV
-    runs-on: ubuntu-latest
+  # ── 2a. Deploy BC-01 (runs in parallel with BC-02 after Terraform) ───────────
+  deploy-bc01-dev:
     needs: terraform-dev
-    environment: dev
-    env:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      AZURE_BC01_FUNCTION_APP_NAME: ${{ secrets.AZURE_BC01_FUNCTION_APP_NAME }}
-      AZURE_BC02_FUNCTION_APP_NAME: ${{ secrets.AZURE_BC02_FUNCTION_APP_NAME }}
+    uses: ./.github/workflows/_deploy-bc.yml
+    with:
+      env: "dev"
+      bc_id: "BC-01"
+      source_dir: "functions/video-discovery"
+      deploy_container: "fn-fd-deploy"
+      resource_group: "mimesis-dev-rg"
+    secrets: inherit
 
-    steps:
-      - uses: actions/checkout@v4
+  # ── 2b. Deploy BC-02 (runs in parallel with BC-01 after Terraform) ───────────
+  deploy-bc02-dev:
+    needs: terraform-dev
+    uses: ./.github/workflows/_deploy-bc.yml
+    with:
+      env: "dev"
+      bc_id: "BC-02"
+      source_dir: "functions/video-ingestion"
+      deploy_container: "fn-fi-deploy"
+      resource_group: "mimesis-dev-rg"
+    secrets: inherit
 
-      - name: Preflight required deploy inputs
-        run: |
-          missing=0
-          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_BC01_FUNCTION_APP_NAME AZURE_BC02_FUNCTION_APP_NAME; do
-            if [ -z "${!var}" ]; then
-              echo "Missing required value: $var (set as repository secret or variable)"
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            exit 1
-          fi
+  # ── 3a. Smoke BC-01 (runs after BC-01 deploy; independent of BC-02 smoke) ───
+  smoke-bc01-dev:
+    needs: deploy-bc01-dev
+    uses: ./.github/workflows/_smoke-bc01.yml
+    with:
+      env: "dev"
+      resource_group: "mimesis-dev-rg"
+    secrets: inherit
 
-      - name: Azure Login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      # Pre-install all package dependencies so the ZIP contains everything the
-      # Azure Functions runtime needs without a remote build step.
-      - name: Install package dependencies for deployment
-        run: |
-          pip install \
-            --target=".python_packages/lib/site-packages" \
-            --upgrade \
-            .
-
-      # BC-01: Video Discovery
-      # Packages functions/video-discovery/ (includes host.json) with all deps.
-      - name: Package BC-01 (Video Discovery)
-        run: |
-          mkdir -p staging-bc01
-          cp -r functions/video-discovery/. staging-bc01/
-          cp -r .python_packages staging-bc01/
-          # Stamp the build ID into the wrapper so the deployed file is self-describing.
-          sed -i "s/__BUILD_ID__/${GITHUB_SHA::8}-${GITHUB_RUN_NUMBER}/g" staging-bc01/function_app.py
-          cd staging-bc01
-          zip -r ../deploy-bc01.zip . \
-            --exclude "*.pyc" \
-            --exclude "*/__pycache__/*"
-
-      # BC-01: Deploy by direct blob upload — bypasses the SCM/Kudu endpoint
-      # entirely (which returns 502 on Flex Consumption apps).
-      #
-      # Strategy: overwrite released-package.zip (the well-known fallback the
-      # FC1 runtime always reads on cold-start) then stop+start to force a fresh
-      # cold-start. No kudu-state.json manipulation needed — the runtime picks up
-      # released-package.zip whenever ResultPackagePath is absent or null.
-      - name: Deploy BC-01 (Video Discovery)
-        env:
-          RG: ${{ env.RESOURCE_GROUP }}
-          APP: ${{ env.AZURE_BC01_FUNCTION_APP_NAME }}
-          SUB: ${{ env.AZURE_SUBSCRIPTION_ID }}
-        run: |
-          # Derive storage account name from resource group (mimesis-dev-rg → mimesisdevsa)
-          STORAGE_ACCOUNT=$(echo "$RG" | sed 's/-rg$//' | tr -d '-')sa
-          CONTAINER="fn-fd-deploy"
-
-          echo "Storage account : $STORAGE_ACCOUNT"
-          echo "Deployment container: $CONTAINER"
-
-          # 1. Overwrite the well-known released-package.zip so the runtime
-          #    always picks up new code on the next cold-start.
-          az storage blob upload \
-            --account-name "$STORAGE_ACCOUNT" \
-            --container-name "$CONTAINER" \
-            --name released-package.zip \
-            --file deploy-bc01.zip \
-            --overwrite \
-            --auth-mode key
-
-          # 2. Force a true cold-start (stop+start; restart keeps warm workers)
-          az functionapp stop --name "$APP" --resource-group "$RG"
-          az functionapp start --name "$APP" --resource-group "$RG"
-
-          # 3. Notify the platform of updated triggers (best-effort — host may
-          #    still be starting up after functionapp start, so allow failure).
-          az rest --method post \
-            --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$APP/syncfunctiontriggers?api-version=2024-04-01" \
-            || true
-
-      # BC-02: Video Ingestion
-      # Packages functions/video-ingestion/ (includes host.json) with all deps.
-      - name: Package BC-02 (Video Ingestion)
-        run: |
-          mkdir -p staging-bc02
-          cp -r functions/video-ingestion/. staging-bc02/
-          cp -r .python_packages staging-bc02/
-          # Stamp the build ID into the wrapper so the deployed file is self-describing.
-          sed -i "s/__BUILD_ID__/${GITHUB_SHA::8}-${GITHUB_RUN_NUMBER}/g" staging-bc02/function_app.py
-          cd staging-bc02
-          zip -r ../deploy-bc02.zip . \
-            --exclude "*.pyc" \
-            --exclude "*/__pycache__/*"
-
-      # BC-02: Deploy by direct blob upload (same strategy as BC-01 above).
-      - name: Deploy BC-02 (Video Ingestion)
-        env:
-          RG: ${{ env.RESOURCE_GROUP }}
-          APP: ${{ env.AZURE_BC02_FUNCTION_APP_NAME }}
-          SUB: ${{ env.AZURE_SUBSCRIPTION_ID }}
-        run: |
-          STORAGE_ACCOUNT=$(echo "$RG" | sed 's/-rg$//' | tr -d '-')sa
-          CONTAINER="fn-fi-deploy"
-
-          echo "Storage account : $STORAGE_ACCOUNT"
-          echo "Deployment container: $CONTAINER"
-
-          # 1. Overwrite the well-known released-package.zip so the runtime
-          #    always picks up new code on the next cold-start.
-          az storage blob upload \
-            --account-name "$STORAGE_ACCOUNT" \
-            --container-name "$CONTAINER" \
-            --name released-package.zip \
-            --file deploy-bc02.zip \
-            --overwrite \
-            --auth-mode key
-
-          # 2. Force a true cold-start (stop+start; restart keeps warm workers)
-          az functionapp stop --name "$APP" --resource-group "$RG"
-          az functionapp start --name "$APP" --resource-group "$RG"
-
-          az rest --method post \
-            --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$APP/syncfunctiontriggers?api-version=2024-04-01" \
-            || true
-
-  # ── 3. Smoke test: verify BC-01 HTTP endpoint and BC-02 function app ────────
-  smoke-dev:
-    name: Smoke Test DEV (BC-01 + BC-02)
-    runs-on: ubuntu-latest
-    needs: deploy-functions-dev
-    environment: dev
-    env:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      AZURE_BC01_FUNCTION_APP_NAME: ${{ secrets.AZURE_BC01_FUNCTION_APP_NAME }}
-      AZURE_BC01_FUNCTION_URL: ${{ secrets.AZURE_BC01_FUNCTION_URL }}
-      AZURE_BC02_FUNCTION_APP_NAME: ${{ secrets.AZURE_BC02_FUNCTION_APP_NAME }}
-      RESOURCE_GROUP: mimesis-dev-rg
-
-    steps:
-      - name: Preflight required smoke inputs
-        run: |
-          missing=0
-          for var in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_BC01_FUNCTION_APP_NAME AZURE_BC01_FUNCTION_URL AZURE_BC02_FUNCTION_APP_NAME; do
-            if [ -z "${!var}" ]; then
-              echo "Missing required value: $var (set as repository secret or variable)"
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            exit 1
-          fi
-
-      - name: Azure Login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Fetch BC-01 host key
-        id: get-key
-        run: |
-          SUB="${{ env.AZURE_SUBSCRIPTION_ID }}"
-          APP="${{ env.AZURE_BC01_FUNCTION_APP_NAME }}"
-          RG="${{ env.RESOURCE_GROUP }}"
-          KEY=$(az rest --method post \
-            --url "https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Web/sites/${APP}/host/default/listKeys?api-version=2024-04-01" \
-            --query "functionKeys.default" -o tsv 2>/dev/null || echo "")
-          if [ -n "$KEY" ]; then
-            echo "::add-mask::$KEY"
-            echo "function_key=$KEY" >> "$GITHUB_OUTPUT"
-            echo "Key retrieved successfully."
-          else
-            echo "Could not retrieve host key — will attempt request without key (expects 401)."
-            echo "function_key=" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Smoke test BC-01 endpoint
-        run: |
-          FUNC_KEY="${{ steps.get-key.outputs.function_key }}"
-          FUNC_URL="${{ env.AZURE_BC01_FUNCTION_URL }}"
-          EXTRA_HEADERS=()
-          if [ -n "$FUNC_KEY" ]; then
-            EXTRA_HEADERS=(-H "x-functions-key: $FUNC_KEY")
-          fi
-          http_status=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X POST \
-            -H "Content-Type: application/json" \
-            "${EXTRA_HEADERS[@]}" \
-            -d '{"keyword":"smoke-test"}' \
-            "$FUNC_URL")
-          echo "HTTP status: $http_status"
-          # 401 = app is reachable but key is wrong/missing (acceptable — app IS deployed)
-          # 0   = no network response (fail)
-          # 404 = route not found (fail — app not deployed correctly)
-          if [ "$http_status" -eq 0 ] || [ "$http_status" -eq 404 ]; then
-            echo "Smoke test FAILED — HTTP $http_status returned by BC-01 endpoint."
-            exit 1
-          fi
-          echo "Smoke test PASSED — HTTP $http_status"
-
-      - name: Smoke test BC-02 (send message to Service Bus)
-        env:
-          AZURE_CLIENT_ID: ${{ env.AZURE_CLIENT_ID }}
-          AZURE_TENANT_ID: ${{ env.AZURE_TENANT_ID }}
-          AZURE_SUBSCRIPTION_ID: ${{ env.AZURE_SUBSCRIPTION_ID }}
-        run: |
-          # az servicebus message send is not available in the Azure CLI.
-          # Use the azure-servicebus Python SDK with DefaultAzureCredential (OIDC).
-          pip install azure-servicebus azure-identity --quiet
-          RG="${{ env.RESOURCE_GROUP }}"
-          SB_NAMESPACE=$(echo "$RG" | sed 's/-rg$//')-bus
-          python3 << 'PYEOF'
-          import os, uuid, json, sys
-          from azure.servicebus import ServiceBusClient, ServiceBusMessage
-          from azure.identity import DefaultAzureCredential
-
-          rg = os.environ["RESOURCE_GROUP"]
-          namespace = rg.replace("-rg", "") + "-bus" + ".servicebus.windows.net"
-          queue = "sb-queue-video-discovered"
-          message_id = str(uuid.uuid4())
-
-          body = json.dumps({
-            "search_job_id": "d4ee9c78-80c4-41d3-9283-1ba45a6ae030",
-            "video_id": "J-QfkYusj-0",
-            "occurred_at": "2026-04-22T21:27:29.466355+00:00",
-            "metadata": {
-              "title": "Gil Gomes 4 - Histórias Inéditas!",
-              "description": "Gil Gomes, o maior contador de histórias do radio brasileiro\nA vida como ela é, sem retoques.",
-              "channel_id": "UCLE6H-xQnEx4U4PBsjht_SA",
-              "channel_title": "peri lobo",
-              "published_at": "2022-02-17T16:02:28+00:00",
-              "duration": "PT11M12S",
-              "view_count": 16155,
-              "like_count": 561,
-              "thumbnails": {
-                "default":  {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/default.jpg",  "width": 120, "height": 90},
-                "medium":   {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/mqdefault.jpg","width": 320, "height": 180},
-                "high":     {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/hqdefault.jpg","width": 480, "height": 360},
-                "standard": {"url": "https://i.ytimg.com/vi/J-QfkYusj-0/sddefault.jpg","width": 640, "height": 480}
-              },
-              "tags": None,
-              "category_id": "25",
-              "default_language": "pt-PT"
-            }
-          })
-
-          print(f"Sending smoke message to {namespace}/{queue} (message-id: {message_id})")
-          try:
-            credential = DefaultAzureCredential()
-            with ServiceBusClient(namespace, credential) as client:
-              with client.get_queue_sender(queue) as sender:
-                sender.send_messages(ServiceBusMessage(body=body, message_id=message_id))
-            print(f"Smoke message sent successfully (message-id: {message_id}).")
-          except Exception as exc:
-            print(f"FAILED — could not send smoke message to Service Bus queue: {exc}", file=sys.stderr)
-            sys.exit(1)
-          PYEOF
-
-      - name: Smoke test BC-02 blob output (end-to-end)
-        run: |
-          RG="${{ env.RESOURCE_GROUP }}"
-          STORAGE_ACCOUNT=$(echo "$RG" | sed 's/-rg$//' | tr -d '-')sa
-          VIDEO_ID="J-QfkYusj-0"
-          # Blobs are stored as {date}/{video_id}/source.mp4 inside the container,
-          # so the video_id is not at the start of the name — use contains() instead of prefix.
-          echo "Polling raw-videos container for blob containing $VIDEO_ID (up to 90s)..."
-          found=0
-          for i in $(seq 1 9); do
-            count=$(az storage blob list \
-              --account-name "$STORAGE_ACCOUNT" \
-              --container-name raw-videos \
-              --auth-mode login \
-              --query "length([?contains(name, '$VIDEO_ID')])" -o tsv 2>/dev/null || echo "0")
-            echo "Attempt $i/9: raw-videos blobs for $VIDEO_ID = $count"
-            if [ "${count:-0}" -gt 0 ]; then
-              found=1
-              break
-            fi
-            sleep 10
-          done
-          if [ "$found" -ne 1 ]; then
-            echo "FAILED — no blob containing $VIDEO_ID found in raw-videos after 90s."
-            exit 1
-          fi
-          echo "Smoke test PASSED — BC-02 wrote raw-video artifact for $VIDEO_ID."
+  # ── 3b. Smoke BC-02 (runs after BC-02 deploy; independent of BC-01 smoke) ───
+  smoke-bc02-dev:
+    needs: deploy-bc02-dev
+    uses: ./.github/workflows/_smoke-bc02.yml
+    with:
+      env: "dev"
+      resource_group: "mimesis-dev-rg"
+    secrets: inherit
