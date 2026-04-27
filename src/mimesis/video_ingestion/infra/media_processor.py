@@ -16,6 +16,12 @@ logger = logging.getLogger(__name__)
 
 _FORMAT = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
 
+# tv_embedded bypasses SABR streaming restriction and n-challenge JS requirement
+# when downloading without cookies, which is necessary from cloud server IPs.
+_NO_COOKIES_EXTRACTOR_ARGS: dict[str, object] = {
+    "youtube": {"player_client": ["tv_embedded"]}
+}
+
 
 class YtDlpMediaProcessor(MediaProcessorPort):
     """Downloads source video and extracts MP3 audio using yt-dlp."""
@@ -48,6 +54,8 @@ class YtDlpMediaProcessor(MediaProcessorPort):
                     cookie_path = Path(tmpdir) / "cookies.txt"
                     cookie_path.write_text(cookies)
                     ydl_opts["cookiefile"] = str(cookie_path)
+                else:
+                    ydl_opts["extractor_args"] = _NO_COOKIES_EXTRACTOR_ARGS
 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([youtube_url])
